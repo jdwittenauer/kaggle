@@ -19,7 +19,7 @@ def AMS(s, b):
         return math.sqrt(radicand)
 
 
-def loadModel(filename):
+def load(filename):
     """
     Load a previously training model from disk.
     """   
@@ -29,7 +29,7 @@ def loadModel(filename):
     return model
 
 
-def saveModel(filename):
+def save(filename):
     """
     Persist a trained model to disk.
     """
@@ -48,63 +48,73 @@ def processTrainingData(fileName, features, impute, standardize):
     temp = training_data['Label'].replace(to_replace=['s','b'], value=[1,0])
     training_data['Nominal'] = temp
     
-    # optionally impute the -999 values to 0
-    if impute == True:
-        for i in training_data.columns:
-            col = training_data[i]
-            col[col.isin([-999])] = 0
-    
     X = training_data.iloc[:,1:features].values
     y = training_data.iloc[:,features+2].values
     w = training_data.iloc[:,features].values
+    
+    # optionally impute the -999 values
+    if impute == 'mean':
+        imp = preprocessing.Imputer(missing_values=-999)
+        X = imp.fit_transform(X)
+    elif impute == 'zeros':
+        X[X == -999] = 0
     
     # create a standardization transform
     scaler = preprocessing.StandardScaler()
     if standardize == True:
         scaler.fit(X)
-        X = scaler.transform(X)
     
     return X, y, w, scaler
 
 
-def trainModel(X, y, alg):
+def train(X, y, alg, standardize, scaler):
     """
     Trains a new model using the training data.
     """
     t0 = time.time()    
     
-    # 1.73 impute=True standardize=True threshold=85
-    if alg == 'logistic':
-        model = linear_model.LogisticRegression()
-    # 0.99 impute=False standardize=True threshold=85 
-    elif alg == 'bayes':
+    # 0.99/0.99 impute=none standardize=True threshold=85
+    if alg == 'bayes':
         model = naive_bayes.GaussianNB()
-    # 3.48 impute=False standardize=True threshold=85
+    # 1.74/1.74 impute=zeros standardize=True threshold=85
+    elif alg == 'logistic':
+        model = linear_model.LogisticRegression()
+    # 3.41/3.36 impute=none standardize=True threshold=85
     elif alg == 'boost':
-        model = ensemble.GradientBoostingClassifier(n_estimators=50, 
-            max_depth=5, min_samples_leaf=200, max_features=10, verbose=1)
-            
+        model = ensemble.GradientBoostingClassifier(learning_rate=0.1,
+            n_estimators=50, max_depth=5, min_samples_split=2,
+            min_samples_leaf=200, subsample=1.0, max_features=10)
+    else:
+        print 'No model defined for ' + alg
+        exit()
+    
+    if standardize == True:
+        X = scaler.transform(X)
+        
     model.fit(X, y)
     
     t1 = time.time()
-    print 'Training took %0.3f s.' % (t1 - t0)
+    print 'Model trained in {0:3f} s.'.format(t1 - t0)
     
     return model
 
 
-def predict(X, model, threshold):
+def predict(X, model, threshold, standardize, scaler):
     """
     Predicts the probability of a positive outcome and converts the
     probability to a binary prediction based on the cutoff percentage.
     """
+    if standardize == True:
+        X = scaler.transform(X)
+    
     y_prob = model.predict_proba(X)[:,1]
     cutoff = np.percentile(y_prob, threshold)
     y_est = y_prob > cutoff
 
-    return y_est
+    return y_prob, y_est
 
 
-def scoreModel(w, y, y_est):
+def score(y, y_est, w):
     """
     Create weighted signal and background sets and calculate the AMS.
     """
@@ -116,36 +126,51 @@ def scoreModel(w, y, y_est):
     return AMS(s, b)
 
 
-def processTestData(fileName, features, impute, standardize, scaler):
+def crossValidate(X, y, alg, standardize, scaler, w, threshold):
+    """
+    Perform cross-validation on the training set and compute the AMS scores.
+    """
+    scores = [0, 0, 0]
+    folds = cross_validation.StratifiedKFold(y, n_folds=3)
+    i = 0
+    
+    for i_train, i_val in folds:
+        # create the training and validation sets
+        X_train, X_val = X[i_train], X[i_val]
+        y_train, y_val = y[i_train], y[i_val]
+        w_train, w_val = w[i_train], w[i_val]
+        
+        # normalize the weights   
+        w_train[y_train == 1] *= (sum(w[y == 1]) / sum(w[y_train == 1]))
+        w_train[y_train == 0] *= (sum(w[y == 0]) / sum(w_train[y_train == 0]))
+        w_val[y_val == 1] *= (sum(w[y == 1]) / sum(w_val[y_val == 1]))
+        w_val[y_val == 0] *= (sum(w[y == 0]) / sum(w_val[y_val == 0]))
+        
+        # train the model
+        model = train(X_train, y_train, alg, standardize, scaler)
+        
+        # predict and score preformance on the validation set
+        y_val_prob, y_val_est = predict(X_val, model, threshold, standardize, scaler)
+        scores[i] = score(y_val, y_val_est, w_val)
+        i = i + 1
+    
+    return np.mean(scores)
+
+
+def processTestData(fileName, features, impute):
     """
     Reads in test data and prepares numpy arrays.
     """
     test_data = pd.read_csv(fileName, sep=',')
-    
-    # optionally impute the -999 values to 0
-    if impute == True:
-        for i in test_data.columns:
-            col = test_data[i]
-            col[col.isin([-999])] = 0
-    
     X_test = test_data.iloc[:,1:features].values
     
-    # standardize using the same transform from training
-    if standardize == True:
-        X_test = scaler.transform(X_test)
+    if impute == 'mean':
+        imp = preprocessing.Imputer(missing_values=-999)
+        X_test = imp.fit_transform(X_test)
+    elif impute == 'zeros':
+        X[X == -999] = 0
     
     return test_data, X_test
-
-
-def predictTest(X_test, model, threshold):
-    """
-    Create test set and use the model to score the data.
-    """
-    y_test_prob = model.predict_proba(X_test)[:,1] 
-    cutoff = np.percentile(y_test_prob, threshold)
-    y_test_est = y_test_prob > cutoff
-    
-    return y_test_prob, y_test_est
 
 
 def createSubmission(test_data, y_test_prob, y_test_est):
@@ -178,56 +203,61 @@ def createSubmission(test_data, y_test_prob, y_test_est):
 
 if __name__ == "__main__":
     
-    import os,random,string,math,time,csv,pickle
+    import os, math, time, pickle
     import numpy as np
-    import scipy as sp
     import matplotlib.pyplot as plt
     import pandas as pd
+    from sklearn import cross_validation
     from sklearn import ensemble
     from sklearn import linear_model
     from sklearn import naive_bayes
-    from sklearn import neighbors
     from sklearn import preprocessing
-    from sklearn import svm
         
     # perform some initialization
     features = 31
     threshold = 85
-    impute = True
+    alg = 'boost' # bayes, logistic, boost
+    impute = 'none' # zeros, mean, none
     standardize = True
     load_model = False
     save_model = False
     create_submission = False
-    alg = 'svm'
     os.chdir("C:\Users\John\Documents\Kaggle\Higgs Boson Challenge")
     
+    print 'Starting process...'
+    print 'alg={0}, impute={1}, standardize={2}, threshold={3}'.format(
+        alg, impute, standardize, threshold)
     print 'Reading in training data...'
     X, y, w, scaler = processTrainingData('training.csv', features, impute, standardize)
     
     if load_model == True:
         print 'Loading model from disk...'
-        model = loadModel('model.pkl')
+        model = load('model.pkl')
     
-    print 'Training model...'
-    model = trainModel(X, y, alg)
+    print 'Training model on full data set...'
+    model = train(X, y, alg, standardize, scaler)
+    
+    print 'Calculating predictions...'
+    y_prob, y_est = predict(X, model, threshold, standardize, scaler)
+       
+    print 'Calculating AMS...'
+    ams = score(y, y_est, w)
+    print'AMS =', ams
+    
+    print 'Performing cross-validation...'
+    val = crossValidate(X, y, alg, standardize, scaler, w, threshold)
+    print'Cross-validation AMS =', val
     
     if save_model == True:
         print 'Saving model to disk...'
-        saveModel('model.pkl')
-    
-    print 'Calculating predictions...'
-    y_est = predict(X, model, threshold)
-       
-    print 'Calculating AMS...'
-    score = scoreModel(w, y, y_est)
-    print'AMS =', score
+        save('model.pkl')
     
     if create_submission == True:
         print 'Reading in test data...'
-        test_data, X_test = processTestData('test.csv', features, impute, standardize, scaler)
+        test_data, X_test = processTestData('test.csv', features, impute)
         
         print 'Predicting test data...'
-        y_test_prob, y_test_est = predictTest(X_test, model, threshold)
+        y_test_prob, y_test_est = predict(X_test, model, threshold, standardize, scaler)
         
         print 'Creating submission file...'
         createSubmission(test_data, y_test_prob, y_test_est)
