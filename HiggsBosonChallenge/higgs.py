@@ -38,7 +38,7 @@ def save(filename):
     model_file.close()
 
 
-def processTrainingData(fileName, features, impute, standardize):
+def processTrainingData(fileName, features, impute, standardize, whiten):
     """
     Reads in training data and prepares numpy arrays.
     """
@@ -60,36 +60,60 @@ def processTrainingData(fileName, features, impute, standardize):
         X[X == -999] = 0
     
     # create a standardization transform
-    scaler = preprocessing.StandardScaler()
+    scaler = None
     if standardize == True:
+        scaler = preprocessing.StandardScaler()
         scaler.fit(X)
     
-    return X, y, w, scaler
+    # create a PCA transform
+    pca = None
+    if whiten == True:
+        pca = decomposition.PCA(whiten=True)
+        pca.fit(X)
+    
+    return training_data, X, y, w, scaler, pca
 
 
-def train(X, y, alg, standardize, scaler):
+def visualize(training_data, X, y, scaler, pca):
+    """
+    Computes statistics describing the data and creates some visualizations
+    that attempt to highlight the underlying structure.
+    
+    Note: Use '%matplotlib inline' and '%matplotlib qt' at the IPython console
+    to switch between display modes.
+    """
+    fig, ax = plt.subplots(figsize=(12,8))
+    ax.plot()
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_title('Title')
+
+
+def train(X, y, alg, scaler, pca):
     """
     Trains a new model using the training data.
     """
     t0 = time.time()    
     
-    # 0.99/0.99 impute=none standardize=True threshold=85
+    # 0.99/0.99 impute=none standardize=True whiten=False threshold=85
     if alg == 'bayes':
         model = naive_bayes.GaussianNB()
-    # 1.74/1.74 impute=zeros standardize=True threshold=85
+    # 1.74/1.74 impute=zeros standardize=True whiten=False threshold=85
     elif alg == 'logistic':
         model = linear_model.LogisticRegression()
-    # 3.41/3.36 impute=none standardize=True threshold=85
+    # 3.98/3.57 impute=none standardize=True whiten=False threshold=85
     elif alg == 'boost':
-        model = ensemble.GradientBoostingClassifier(learning_rate=0.1,
-            n_estimators=50, max_depth=5, min_samples_split=2,
-            min_samples_leaf=200, subsample=1.0, max_features=10)
+        model = ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=7,
+            min_samples_split=10, min_samples_leaf=50, max_features=30)
     else:
         print 'No model defined for ' + alg
         exit()
     
-    if standardize == True:
+    if scaler != None:
         X = scaler.transform(X)
+    
+    if pca != None:
+        X = pca.transform(X)
         
     model.fit(X, y)
     
@@ -99,13 +123,16 @@ def train(X, y, alg, standardize, scaler):
     return model
 
 
-def predict(X, model, threshold, standardize, scaler):
+def predict(X, model, threshold, scaler, pca):
     """
     Predicts the probability of a positive outcome and converts the
     probability to a binary prediction based on the cutoff percentage.
     """
-    if standardize == True:
+    if scaler != None:
         X = scaler.transform(X)
+    
+    if pca != None:
+        X = pca.transform(X)
     
     y_prob = model.predict_proba(X)[:,1]
     cutoff = np.percentile(y_prob, threshold)
@@ -126,7 +153,7 @@ def score(y, y_est, w):
     return AMS(s, b)
 
 
-def crossValidate(X, y, alg, standardize, scaler, w, threshold):
+def crossValidate(X, y, alg, scaler, pca, w, threshold):
     """
     Perform cross-validation on the training set and compute the AMS scores.
     """
@@ -147,15 +174,73 @@ def crossValidate(X, y, alg, standardize, scaler, w, threshold):
         w_val[y_val == 0] *= (sum(w[y == 0]) / sum(w_val[y_val == 0]))
         
         # train the model
-        model = train(X_train, y_train, alg, standardize, scaler)
+        model = train(X_train, y_train, alg, scaler, pca)
         
         # predict and score preformance on the validation set
-        y_val_prob, y_val_est = predict(X_val, model, threshold, standardize, scaler)
+        y_val_prob, y_val_est = predict(X_val, model, threshold, scaler, pca)
         scores[i] = score(y_val, y_val_est, w_val)
         i = i + 1
     
     return np.mean(scores)
 
+
+def boostGridSearch(X, y, w, threshold):
+    """
+    Performs a hyperparameter search for the gradient boosting classifier.
+    """
+    top_score = []
+    best_val = 0.0
+    max_depth = [7, 8]
+    min_samples_split = [2, 10, 50]
+    min_samples_leaf = [20, 100]
+    max_features = [10, 30]
+    
+    for depth in max_depth:
+        for split in min_samples_split:
+            for leaf in min_samples_leaf:
+                for features in max_features:
+                    model = ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=depth,
+                        min_samples_split=split, min_samples_leaf=leaf, max_features=features)
+                        
+                    model.fit(X, y)
+                    
+                    y_prob, y_est = predict(X, model, threshold, None, None)  
+                    ams = score(y, y_est, w)
+                    
+                    scores = [0, 0, 0]
+                    folds = cross_validation.StratifiedKFold(y, n_folds=3)
+                    i = 0
+                    
+                    for i_train, i_val in folds:
+                        X_train, X_val = X[i_train], X[i_val]
+                        y_train, y_val = y[i_train], y[i_val]
+                        w_train, w_val = w[i_train], w[i_val]
+                         
+                        w_train[y_train == 1] *= (sum(w[y == 1]) / sum(w[y_train == 1]))
+                        w_train[y_train == 0] *= (sum(w[y == 0]) / sum(w_train[y_train == 0]))
+                        w_val[y_val == 1] *= (sum(w[y == 1]) / sum(w_val[y_val == 1]))
+                        w_val[y_val == 0] *= (sum(w[y == 0]) / sum(w_val[y_val == 0]))
+                        
+                        model = ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=depth,
+                            min_samples_split=split, min_samples_leaf=leaf, max_features=features)
+                            
+                        model.fit(X_train, y_train)
+                        
+                        y_val_prob, y_val_est = predict(X_val, model, threshold, None, None)
+                        scores[i] = score(y_val, y_val_est, w_val)
+                        i = i + 1
+                    
+                    val = np.mean(scores)
+                    
+                    print 'depth={0} split={1} leaf={2} features={3} train={4} val={5}'.format(
+                        depth, split, leaf, features, ams, val)
+                        
+                    if val > best_val:
+                        best_val = val
+                        top_score = [depth, split, leaf, features, ams, val]
+    
+    return top_score
+    
 
 def processTestData(fileName, features, impute):
     """
@@ -205,9 +290,10 @@ if __name__ == "__main__":
     
     import os, math, time, pickle
     import numpy as np
-    import matplotlib.pyplot as plt
     import pandas as pd
+    import matplotlib.pyplot as plt
     from sklearn import cross_validation
+    from sklearn import decomposition
     from sklearn import ensemble
     from sklearn import linear_model
     from sklearn import naive_bayes
@@ -218,35 +304,53 @@ if __name__ == "__main__":
     threshold = 85
     alg = 'boost' # bayes, logistic, boost
     impute = 'none' # zeros, mean, none
-    standardize = True
+    standardize = False
+    whiten = False
     load_model = False
     save_model = False
+    train_model = False
+    grid_search = False
+    create_visualizations = True
     create_submission = False
     os.chdir("C:\Users\John\Documents\Kaggle\Higgs Boson Challenge")
     
     print 'Starting process...'
-    print 'alg={0}, impute={1}, standardize={2}, threshold={3}'.format(
-        alg, impute, standardize, threshold)
+    print 'alg={0}, impute={1}, standardize={2}, whiten={3} threshold={4}'.format(
+        alg, impute, standardize, whiten, threshold)
+    
     print 'Reading in training data...'
-    X, y, w, scaler = processTrainingData('training.csv', features, impute, standardize)
+    training_data, X, y, w, scaler, pca = processTrainingData(
+        'training.csv', features, impute, standardize, whiten)
+    
+    if create_visualizations == True:
+        print 'Creating visualizations...'
+        visualize(training_data, X, y, scaler, pca)
     
     if load_model == True:
         print 'Loading model from disk...'
         model = load('model.pkl')
     
-    print 'Training model on full data set...'
-    model = train(X, y, alg, standardize, scaler)
+    if train_model == True:
+        print 'Training model on full data set...'
+        model = train(X, y, alg, scaler, pca)
+        
+        print 'Calculating predictions...'
+        y_prob, y_est = predict(X, model, threshold, scaler, pca)
+           
+        print 'Calculating AMS...'
+        ams = score(y, y_est, w)
+        print'AMS =', ams
+        
+        print 'Performing cross-validation...'
+        val = crossValidate(X, y, alg, scaler, pca, w, threshold)
+        print'Cross-validation AMS =', val
     
-    print 'Calculating predictions...'
-    y_prob, y_est = predict(X, model, threshold, standardize, scaler)
-       
-    print 'Calculating AMS...'
-    ams = score(y, y_est, w)
-    print'AMS =', ams
-    
-    print 'Performing cross-validation...'
-    val = crossValidate(X, y, alg, standardize, scaler, w, threshold)
-    print'Cross-validation AMS =', val
+    if grid_search == True:
+        print 'Performing a grid search in hyperparameter space...'
+        top_score = boostGridSearch(X, y, w, threshold)
+        print 'Best parameter settings found:'
+        print 'depth={0} split={1} leaf={2} features={3} train={4} val={5}'.format(
+            top_score[0], top_score[1], top_score[2], top_score[3], top_score[4], top_score[5])
     
     if save_model == True:
         print 'Saving model to disk...'
@@ -257,7 +361,7 @@ if __name__ == "__main__":
         test_data, X_test = processTestData('test.csv', features, impute)
         
         print 'Predicting test data...'
-        y_test_prob, y_test_est = predict(X_test, model, threshold, standardize, scaler)
+        y_test_prob, y_test_est = predict(X_test, model, threshold, scaler, pca)
         
         print 'Creating submission file...'
         createSubmission(test_data, y_test_prob, y_test_est)
