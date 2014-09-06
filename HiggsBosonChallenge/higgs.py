@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-Created on Sat Aug 23 14:43:59 2014
-
 @author: John Wittenauer
+
+@notes: This script was tested on 64-bit Windows 7 using the Anaconda 2.0
+distribution of 64-bit Python 2.7.
 """
 
 
@@ -38,11 +39,11 @@ def save(filename):
     model_file.close()
 
 
-def processTrainingData(fileName, features, impute, standardize, whiten):
+def processTrainingData(filename, features, impute, standardize, whiten):
     """
     Reads in training data and prepares numpy arrays.
     """
-    training_data = pd.read_csv('training.csv', sep=',')
+    training_data = pd.read_csv(filename, sep=',')
     
     # add a nominal label (0, 1)
     temp = training_data['Label'].replace(to_replace=['s','b'], value=[1,0])
@@ -82,6 +83,7 @@ def visualize(training_data, X, y, scaler, pca):
     Note: Use '%matplotlib inline' and '%matplotlib qt' at the IPython console
     to switch between display modes.
     """
+    # TODO - add visualizations
     fig, ax = plt.subplots(figsize=(12,8))
     ax.plot()
     ax.set_xlabel('X')
@@ -95,16 +97,15 @@ def train(X, y, alg, scaler, pca):
     """
     t0 = time.time()    
     
-    # 0.99/0.99 impute=none standardize=True whiten=False threshold=85
     if alg == 'bayes':
         model = naive_bayes.GaussianNB()
-    # 1.74/1.74 impute=zeros standardize=True whiten=False threshold=85
     elif alg == 'logistic':
         model = linear_model.LogisticRegression()
-    # 3.98/3.57 impute=none standardize=True whiten=False threshold=85
+    elif alg == 'svm':
+        model = svm.SVC()
     elif alg == 'boost':
         model = ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=7,
-            min_samples_split=10, min_samples_leaf=50, max_features=30)
+            min_samples_split=200, min_samples_leaf=200, max_features=30)
     else:
         print 'No model defined for ' + alg
         exit()
@@ -116,6 +117,8 @@ def train(X, y, alg, scaler, pca):
         X = pca.transform(X)
         
     model.fit(X, y)
+    
+    #TODO - add feature importance visualization
     
     t1 = time.time()
     print 'Model trained in {0:3f} s.'.format(t1 - t0)
@@ -187,13 +190,18 @@ def crossValidate(X, y, alg, scaler, pca, w, threshold):
 def boostGridSearch(X, y, w, threshold):
     """
     Performs a hyperparameter search for the gradient boosting classifier.
+    Could be sped up significantly if run in parallel on a multi-core
+    machine, but that is left as a future enhancement.  Another approach
+    would be to integrate the AMS metric into scikit-learn's grid search.
     """
     top_score = []
     best_val = 0.0
-    max_depth = [7, 8]
-    min_samples_split = [2, 10, 50]
-    min_samples_leaf = [20, 100]
-    max_features = [10, 30]
+    
+    # parameters
+    max_depth = []
+    min_samples_split = []
+    min_samples_leaf = []
+    max_features = []
     
     for depth in max_depth:
         for split in min_samples_split:
@@ -242,11 +250,11 @@ def boostGridSearch(X, y, w, threshold):
     return top_score
     
 
-def processTestData(fileName, features, impute):
+def processTestData(filename, features, impute):
     """
     Reads in test data and prepares numpy arrays.
     """
-    test_data = pd.read_csv(fileName, sep=',')
+    test_data = pd.read_csv(filename, sep=',')
     X_test = test_data.iloc[:,1:features].values
     
     if impute == 'mean':
@@ -298,21 +306,22 @@ if __name__ == "__main__":
     from sklearn import linear_model
     from sklearn import naive_bayes
     from sklearn import preprocessing
+    from sklearn import svm
         
     # perform some initialization
     features = 31
     threshold = 85
-    alg = 'boost' # bayes, logistic, boost
+    alg = 'boost' # bayes, logistic, svm, boost
     impute = 'none' # zeros, mean, none
-    standardize = False
+    standardize = True
     whiten = False
     load_model = False
-    save_model = False
-    train_model = False
+    save_model = True
+    train_model = True
     grid_search = False
-    create_visualizations = True
-    create_submission = False
-    os.chdir("C:\Users\John\Documents\Kaggle\Higgs Boson Challenge")
+    create_visualizations = False
+    create_submission = True
+    os.chdir('C:\Users\John\Documents\Kaggle\Higgs Boson Challenge')
     
     print 'Starting process...'
     print 'alg={0}, impute={1}, standardize={2}, whiten={3} threshold={4}'.format(
