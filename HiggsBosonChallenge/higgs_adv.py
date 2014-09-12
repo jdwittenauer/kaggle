@@ -6,6 +6,21 @@
 distribution of 64-bit Python 2.7.
 """
 
+import os, math, time, pickle, sys
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn import cross_validation
+from sklearn import decomposition
+from sklearn import ensemble
+from sklearn import linear_model
+from sklearn import naive_bayes
+from sklearn import preprocessing
+from sklearn import svm
+
+sys.path.append('/home/john/git/xgboost/wrapper')
+import xgboost as xgb
+
 
 def AMS(s, b):
     """
@@ -20,23 +35,30 @@ def AMS(s, b):
         return math.sqrt(radicand)
 
 
-def load(filename):
+def load(alg, filename):
     """
     Load a previously training model from disk.
-    """   
-    model_file = open(filename, 'rb')
-    model = pickle.load(model_file)
-    model_file.close()
+    """
+    if alg == 'xgboost':
+        model = xgb.Booster({'nthread':16}, model_file = filename)
+    else:
+        model_file = open(filename, 'rb')
+        model = pickle.load(model_file)
+        model_file.close()
+        
     return model
 
 
-def save(filename):
+def save(alg, model, filename):
     """
     Persist a trained model to disk.
     """
-    model_file = open(filename, 'wb')
-    pickle.dump(model, model_file)
-    model_file.close()
+    if alg == 'xgboost':
+        model.save_model(filename)
+    else:
+        model_file = open(filename, 'wb')
+        pickle.dump(model, model_file)
+        model_file.close()
 
 
 def processTrainingData(filename, features, impute, standardize, whiten):
@@ -49,9 +71,9 @@ def processTrainingData(filename, features, impute, standardize, whiten):
     temp = training_data['Label'].replace(to_replace=['s','b'], value=[1,0])
     training_data['Nominal'] = temp
     
-    X = training_data.iloc[:,1:features].values
-    y = training_data.iloc[:,features+2].values
-    w = training_data.iloc[:,features].values
+    X = training_data.iloc[:,1:features+1].values
+    y = training_data.iloc[:,features+3].values
+    w = training_data.iloc[:,features+1].values
     
     # optionally impute the -999 values
     if impute == 'mean':
@@ -75,7 +97,7 @@ def processTrainingData(filename, features, impute, standardize, whiten):
     return training_data, X, y, w, scaler, pca
 
 
-def visualize(training_data, X, y, scaler, pca):
+def visualize(training_data, X, y, scaler, pca, features):
     """
     Computes statistics describing the data and creates some visualizations
     that attempt to highlight the underlying structure.
@@ -83,12 +105,44 @@ def visualize(training_data, X, y, scaler, pca):
     Note: Use '%matplotlib inline' and '%matplotlib qt' at the IPython console
     to switch between display modes.
     """
-    # TODO - add visualizations
-    fig, ax = plt.subplots(figsize=(12,8))
-    ax.plot()
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_title('Title')
+    
+    # feature histograms
+    fig1, ax1 = plt.subplots(4, 4, figsize=(20, 10))
+    for i in range(16):
+        ax1[i%4, i/4].hist(X[:,i])
+        ax1[i%4, i/4].set_title(training_data.columns[i+1])
+        ax1[i%4, i/4].set_xlim((min(X[:,i]), max(X[:,i])))
+    fig1.tight_layout()
+    
+    fig2, ax2 = plt.subplots(4, 4, figsize=(20, 10))
+    for i in range(16, features):
+        ax2[i%4, (i-16)/4].hist(X[:,i])
+        ax2[i%4, (i-16)/4].set_title(training_data.columns[i+1])
+        ax2[i%4, (i-16)/4].set_xlim((min(X[:,i]), max(X[:,i])))
+    fig2.tight_layout()
+    
+    # covariance matrix
+    if scaler != None:
+        X = scaler.transform(X)
+        
+    cov = np.cov(X, rowvar=0)
+    
+    fig3, ax3 = plt.subplots(figsize=(16, 10))
+    p = ax3.pcolor(cov)
+    fig3.colorbar(p, ax=ax3)
+    ax3.set_title('Feature Covariance Matrix')
+    
+    # pca plots
+    if pca != None:
+        X = pca.transform(X)
+    
+        fig4, ax4 = plt.subplots(figsize=(16, 10))
+        ax4.scatter(X[:,0], X[:,1], c=y)
+        ax4.set_title('First & Second Principal Components')
+        
+        fig5, ax5 = plt.subplots(figsize=(16, 10))
+        ax5.scatter(X[:,1], X[:,2], c=y)
+        ax5.set_title('Second & Third Principal Components')
 
 
 def train(X, y, w, alg, scaler, pca):
@@ -125,8 +179,6 @@ def train(X, y, w, alg, scaler, pca):
     t1 = time.time()
     print 'Model trained in {0:3f} s.'.format(t1 - t0)
     
-    #TODO - add feature importance visualization
-    
     return model
 
 
@@ -144,7 +196,7 @@ def trainXGB(X, y, w, scaler, pca):
     param = {}
     param['objective'] = 'binary:logitraw'
     param['scale_pos_weight'] = w_neg/w_pos
-    param['eta'] = 0.1 
+    param['eta'] = 0.08
     param['max_depth'] = 7
     param['subsample'] = 0.8
     param['eval_metric'] = 'auc'
@@ -153,7 +205,7 @@ def trainXGB(X, y, w, scaler, pca):
     plst = list(param.items())
     watchlist = [ ]
     
-    model = xgb.train(plst, xgmat, 130, watchlist)
+    model = xgb.train(plst, xgmat, 128, watchlist)
     
     t1 = time.time()
     print 'Model trained in {0:3f} s.'.format(t1 - t0)
@@ -232,18 +284,18 @@ def processTestData(filename, features, impute):
     Reads in test data and prepares numpy arrays.
     """
     test_data = pd.read_csv(filename, sep=',')
-    X_test = test_data.iloc[:,1:features].values
+    X_test = test_data.iloc[:,1:features+1].values
     
     if impute == 'mean':
         imp = preprocessing.Imputer(missing_values=-999)
         X_test = imp.fit_transform(X_test)
     elif impute == 'zeros':
-        X[X == -999] = 0
+        X_test[X_test == -999] = 0
     
     return test_data, X_test
 
 
-def createSubmission(test_data, y_test_prob, y_test_est):
+def createSubmission(test_data, y_test_prob, y_test_est, data_dir):
     """
     Create a new datafrane with the submission data.
     """
@@ -268,28 +320,12 @@ def createSubmission(test_data, y_test_prob, y_test_est):
     submit[['EventId', 'RankOrder']] = submit[['EventId', 'RankOrder']].astype(int)
     
     # finally create the submission file
-    submit.to_csv('submission.csv', sep=',', index=False, index_label=False)
+    submit.to_csv(data_dir + '/submission.csv', sep=',', index=False, index_label=False)
 
 
-if __name__ == "__main__":
-    
-    import os, math, time, pickle, sys
-    import numpy as np
-    import pandas as pd
-    import matplotlib.pyplot as plt
-    from sklearn import cross_validation
-    from sklearn import decomposition
-    from sklearn import ensemble
-    from sklearn import linear_model
-    from sklearn import naive_bayes
-    from sklearn import preprocessing
-    from sklearn import svm
-    
-    sys.path.append('/home/john/git/xgboost/wrapper')
-    import xgboost as xgb
-        
+def main():
     # perform some initialization
-    features = 31
+    features = 30
     threshold = 85
     alg = 'xgboost' # bayes, logistic, boost, xgboost
     impute = 'none' # zeros, mean, none
@@ -297,11 +333,14 @@ if __name__ == "__main__":
     whiten = False
     load_training_data = True
     load_model = False
-    train_model = True
+    train_model = False
     save_model = False
-    create_visualizations = False
+    create_visualizations = True
     create_submission = False
-    os.chdir('/home/john/git/kaggle/HiggsBosonChallenge')
+    code_dir = '/home/john/git/kaggle/HiggsBosonChallenge'
+    data_dir = '/home/john/data'
+    
+    os.chdir(code_dir)
     
     print 'Starting process...'
     print 'alg={0}, impute={1}, standardize={2}, whiten={3} threshold={4}'.format(
@@ -310,15 +349,15 @@ if __name__ == "__main__":
     if load_training_data == True:
         print 'Reading in training data...'
         training_data, X, y, w, scaler, pca = processTrainingData(
-            '/home/john/data/training.csv', features, impute, standardize, whiten)
+            data_dir + '/training.csv', features, impute, standardize, whiten)
     
     if create_visualizations == True:
         print 'Creating visualizations...'
-        visualize(training_data, X, y, scaler, pca)
+        visualize(training_data, X, y, scaler, pca, features)
     
     if load_model == True:
         print 'Loading model from disk...'
-        model = load('model.pkl')
+        model = load(alg, data_dir + '/model.pkl')
     
     if train_model == True: 
         print 'Training model on full data set...'
@@ -337,16 +376,20 @@ if __name__ == "__main__":
     
     if save_model == True:
         print 'Saving model to disk...'
-        save('model.pkl')
+        save(alg, model, data_dir + '/model.pkl')
     
     if create_submission == True:
         print 'Reading in test data...'
-        test_data, X_test = processTestData('/home/john/data/test.csv', features, impute)
+        test_data, X_test = processTestData(data_dir + '/test.csv', features, impute)
         
         print 'Predicting test data...'
         y_test_prob, y_test_est = predict(X_test, model, alg, threshold, scaler, pca)
         
         print 'Creating submission file...'
-        createSubmission(test_data, y_test_prob, y_test_est)
+        createSubmission(test_data, y_test_prob, y_test_est, data_dir)
     
     print 'Process complete.'
+
+
+if __name__ == "__main__":
+    main()
