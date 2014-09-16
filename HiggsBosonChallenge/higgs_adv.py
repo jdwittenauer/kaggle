@@ -295,7 +295,7 @@ def processTestData(filename, features, impute):
     return test_data, X_test
 
 
-def createSubmission(test_data, y_test_prob, y_test_est, data_dir):
+def createSubmission(test_data, y_test_prob, y_test_est, submit_file):
     """
     Create a new datafrane with the submission data.
     """
@@ -320,7 +320,7 @@ def createSubmission(test_data, y_test_prob, y_test_est, data_dir):
     submit[['EventId', 'RankOrder']] = submit[['EventId', 'RankOrder']].astype(int)
     
     # finally create the submission file
-    submit.to_csv(data_dir + '/submission.csv', sep=',', index=False, index_label=False)
+    submit.to_csv(submit_file, sep=',', index=False, index_label=False)
 
 
 def main():
@@ -337,8 +337,12 @@ def main():
     save_model = False
     create_visualizations = True
     create_submission = False
-    code_dir = '/home/john/git/kaggle/HiggsBosonChallenge'
-    data_dir = '/home/john/data'
+    code_dir = '/home/john/git/kaggle/HiggsBosonChallenge/'
+    data_dir = '/home/john/data/higgs/'
+    training_file = 'training.csv'
+    test_file = 'test.csv'
+    submit_file = 'submission.csv'
+    model_file = 'model.pkl'
     
     os.chdir(code_dir)
     
@@ -349,7 +353,7 @@ def main():
     if load_training_data == True:
         print 'Reading in training data...'
         training_data, X, y, w, scaler, pca = processTrainingData(
-            data_dir + '/training.csv', features, impute, standardize, whiten)
+            data_dir + training_file, features, impute, standardize, whiten)
     
     if create_visualizations == True:
         print 'Creating visualizations...'
@@ -357,7 +361,7 @@ def main():
     
     if load_model == True:
         print 'Loading model from disk...'
-        model = load(alg, data_dir + '/model.pkl')
+        model = load(alg, data_dir + model_file)
     
     if train_model == True: 
         print 'Training model on full data set...'
@@ -376,17 +380,17 @@ def main():
     
     if save_model == True:
         print 'Saving model to disk...'
-        save(alg, model, data_dir + '/model.pkl')
+        save(alg, model, data_dir + model_file)
     
     if create_submission == True:
         print 'Reading in test data...'
-        test_data, X_test = processTestData(data_dir + '/test.csv', features, impute)
+        test_data, X_test = processTestData(data_dir + test_file, features, impute)
         
         print 'Predicting test data...'
         y_test_prob, y_test_est = predict(X_test, model, alg, threshold, scaler, pca)
         
         print 'Creating submission file...'
-        createSubmission(test_data, y_test_prob, y_test_est, data_dir)
+        createSubmission(test_data, y_test_prob, y_test_est, data_dir + submit_file)
     
     print 'Process complete.'
 
