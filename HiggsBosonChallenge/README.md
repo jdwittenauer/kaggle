@@ -9,7 +9,7 @@ This directory includes the code I used to run experiments for the competition. 
 
 I used the Anaconda distribution of Python with the IPython kernel and Spyder IDE to run experiments.  I also installed and configured several additional dependencies (xgboost and pylearn 2).  There are three scripts of interest:<br/>
 
-higgs.py - Primarity based on scikit-learn solutions<br/>
+higgs.py - Primarily based on scikit-learn solutions<br/>
 higgs-adv.py - Switched to a Linux VM and incorporated the xgboost library<br/>
 higgs-nn.py - Set up pylearn 2 and started experimenting with deep learning neural nets (unfortunately I ran out of time before making any significant progress here)<br/>
 
