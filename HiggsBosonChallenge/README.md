@@ -7,7 +7,7 @@ Higgs Boson Machine Learning Challenge
 
 This directory includes the code I used to run experiments for the competition.  Despite starting only a few weeks before the deadline and having very limited time to invest, I managed to place in the top 25%.<br/>
 
-I used the Anaconda distribution of Python with the IPython kernel and Spyder IDE to run experiments.  I also installed and configured several additional dependencies (xgboost and pylearn 2).  There are three scripts of interest:<br/>
+I used the Anaconda distribution of Python with the IPython kernel and PyCharm IDE to run experiments.  I also installed and configured several additional dependencies (xgboost and pylearn 2).  There are three scripts of interest:<br/>
 
 higgs.py - Primarily based on scikit-learn solutions<br/>
 higgs-adv.py - Switched to a Linux VM and incorporated the xgboost library<br/>
