@@ -2,7 +2,7 @@
 """
 @author: John Wittenauer
 
-@notes: This script was tested on 64-bit Ububtu 14 using the Anaconda 2.0
+@notes: This script was tested on 64-bit Ubuntu 14 using the Anaconda 2.0
 distribution of 64-bit Python 2.7.
 """
 
@@ -16,12 +16,12 @@ from pylearn2.config import yaml_parse
 from pylearn2.utils import serial
 
 
-def AMS(s, b):
+def ams(s, b):
     """
     Approximate Median Significant function to evaluate solutions.
     """
     br = 10.0
-    radicand = 2 *( (s + b + br) * math.log(1.0 + s / (b + br)) - s)
+    radicand = 2 * ((s + b + br) * math.log(1.0 + s / (b + br)) - s)
     if radicand < 0:
         print 'Radicand is negative.'
         exit()
@@ -29,19 +29,19 @@ def AMS(s, b):
         return math.sqrt(radicand)
 
 
-def processTrainingData(filename, features, impute, standardize, whiten):
+def process_training_data(filename, features, impute, standardize, whiten):
     """
     Reads in training data and prepares numpy arrays.
     """
     training_data = pd.read_csv(filename, sep=',')
     
     # add a nominal label (0, 1)
-    temp = training_data['Label'].replace(to_replace=['s','b'], value=[1,0])
+    temp = training_data['Label'].replace(to_replace=['s', 'b'], value=[1, 0])
     training_data['Nominal'] = temp
     
-    X = training_data.iloc[:,1:features+1].values
-    y = training_data.iloc[:,features+3].values
-    w = training_data.iloc[:,features+1].values
+    X = training_data.iloc[:, 1:features+1].values
+    y = training_data.iloc[:, features+3].values
+    w = training_data.iloc[:, features+1].values
     
     # optionally impute the -999 values
     if impute == 'mean':
@@ -52,20 +52,20 @@ def processTrainingData(filename, features, impute, standardize, whiten):
     
     # create a standardization transform
     scaler = None
-    if standardize == True:
+    if standardize:
         scaler = preprocessing.StandardScaler()
         scaler.fit(X)
     
     # create a PCA transform
     pca = None
-    if whiten == True:
+    if whiten:
         pca = decomposition.PCA(whiten=True)
         pca.fit(X)
     
     return training_data, X, y, w, scaler, pca
 
 
-def createNNPreTrainFile(original_filename, new_filename, impute, scaler, pca):
+def create_nn_pre_train_file(original_filename, new_filename, impute, scaler, pca):
     """
     Creates a non-labeled data set with transforms applied to be used
     by pylearn2's csv data set class.
@@ -80,17 +80,17 @@ def createNNPreTrainFile(original_filename, new_filename, impute, scaler, pca):
     elif impute == 'zeros':
         X[X == -999] = 0
     
-    if scaler != None:
+    if scaler is not None:
         X = scaler.transform(X)
     
-    if pca != None:
+    if pca is not None:
         X = pca.transform(X)
     
     combined_data = pd.DataFrame(X, columns=combined_data.columns.values)
     combined_data.to_csv(new_filename, sep=',', index=False)
 
 
-def createNNTrainingFile(training_data, features, impute, scaler, pca, filename):
+def create_nn_training_file(training_data, features, impute, scaler, pca, filename):
     """
     Creates a labeled training set with transforms applied to be used
     by pylearn2's csv data set class.
@@ -104,7 +104,7 @@ def createNNTrainingFile(training_data, features, impute, scaler, pca, filename)
     nn_training_data.drop('Label', axis=1, inplace=True)
     nn_training_data.drop('Nominal', axis=1, inplace=True)
     
-    X = nn_training_data.iloc[:,1:features+1].values
+    X = nn_training_data.iloc[:, 1:features+1].values
     
     if impute == 'mean':
         imp = preprocessing.Imputer(missing_values=-999)
@@ -112,10 +112,10 @@ def createNNTrainingFile(training_data, features, impute, scaler, pca, filename)
     elif impute == 'zeros':
         X[X == -999] = 0
     
-    if scaler != None:
+    if scaler is not None:
         X = scaler.transform(X)
     
-    if pca != None:
+    if pca is not None:
         X = pca.transform(X)
     
     X = np.insert(X, 0, nn_training_data['NN_Label'].values, 1)
@@ -131,18 +131,18 @@ def train(model_definition_file, data_dir):
     with open(model_definition_file, 'r') as f:
         train_nn = f.read()
     
-    hyper_params = { 'data_dir' : data_dir,
-                     'num_features' : 30,
-                     'dim_h0' : 50,
-                     'batch_size' : 100,
-                     'max_epochs' : 10,
-                     'train_start' : 0,
-                     'train_stop' : 150000,
-                     'valid_start' : 150001,
-                     'valid_stop' : 200000,
-                     'test_start' : 200001,
-                     'test_stop' : 250000 }
-    train_nn = train_nn % (hyper_params)
+    hyper_params = {'data_dir': data_dir,
+                    'num_features': 30,
+                    'dim_h0': 50,
+                    'batch_size': 100,
+                    'max_epochs': 10,
+                    'train_start': 0,
+                    'train_stop': 150000,
+                    'valid_start': 150001,
+                    'valid_stop': 200000,
+                    'test_start': 200001,
+                    'test_stop': 250000}
+    train_nn = train_nn % hyper_params
     train_nn = yaml_parse.load(train_nn)
     train_nn.main_loop()
 
@@ -153,10 +153,10 @@ def predict(X, threshold, scaler, pca, model_file):
     to predict the probability of a positive outcome, and converts
     to a binary prediction based on the cutoff percentage.
     """
-    if scaler != None:
+    if scaler is not None:
         X = scaler.transform(X)
     
-    if pca != None:
+    if pca is not None:
         X = pca.transform(X)
     
     # Load the model
@@ -168,7 +168,7 @@ def predict(X, threshold, scaler, pca, model_file):
     pred = function([x], y)
     
     # Convert to a prediction
-    y_prob = pred(X)[:,1]
+    y_prob = pred(X)[:, 1]
     cutoff = np.percentile(y_prob, threshold)
     y_est = y_prob > cutoff
     
@@ -184,15 +184,15 @@ def score(y, y_est, w):
     s = np.sum(y_signal * (y_est == 1.0))
     b = np.sum(y_background * (y_est == 1.0))
     
-    return AMS(s, b)
+    return ams(s, b)
     
 
-def processTestData(filename, features, impute):
+def process_test_data(filename, features, impute):
     """
     Reads in test data and prepares numpy arrays.
     """
     test_data = pd.read_csv(filename, sep=',')
-    X_test = test_data.iloc[:,1:features+1].values
+    X_test = test_data.iloc[:, 1:features+1].values
     
     if impute == 'mean':
         imp = preprocessing.Imputer(missing_values=-999)
@@ -203,9 +203,9 @@ def processTestData(filename, features, impute):
     return test_data, X_test
 
 
-def createSubmission(test_data, y_test_prob, y_test_est, submit_file):
+def create_submission(test_data, y_test_prob, y_test_est, submit_file):
     """
-    Create a new datafrane with the submission data.
+    Create a new data frame with the submission data.
     """
     temp = pd.DataFrame(y_test_prob, columns=['RankOrder'])
     temp2 = pd.DataFrame(y_test_est, columns=['Class'])
@@ -214,9 +214,9 @@ def createSubmission(test_data, y_test_prob, y_test_est, submit_file):
     # sort it so they're in the ascending order by probability
     submit = submit.sort(['RankOrder'], ascending=True)
     
-    # convert the probablities to rank order (required by the submission guidelines)
+    # convert the probabilities to rank order (required by the submission guidelines)
     for i in range(0, y_test_est.shape[0], 1):
-        submit.iloc[i,1] = i + 1
+        submit.iloc[i, 1] = i + 1
     
     # re-sort by event ID
     submit = submit.sort(['EventId'], ascending=True)
@@ -235,14 +235,14 @@ def main():
     # perform some initialization
     features = 30
     threshold = 85
-    impute = 'zeros' # zeros, mean, none
+    impute = 'zeros'  # zeros, mean, none
     standardize = True
     whiten = False
     load_training_data = True
     train_model = True
     create_nn_files = True
     train_nn_model = True
-    create_submission = False
+    create_submission_file = False
     code_dir = '/home/john/git/kaggle/HiggsBosonChallenge'
     data_dir = '/home/john/data/higgs'
     pretrain_file = '/combined.csv'
@@ -260,22 +260,22 @@ def main():
     print 'impute={0}, standardize={1}, whiten={2} threshold={3}'.format(
         impute, standardize, whiten, threshold)
     
-    if load_training_data == True:
+    if load_training_data:
         print 'Reading in training data...'
-        training_data, X, y, w, scaler, pca = processTrainingData(
+        training_data, X, y, w, scaler, pca = process_training_data(
             data_dir + training_file, features, impute, standardize, whiten)
     
-    if train_model == True:
+    if train_model:
         print 'Running neural network process...'
         
-        if create_nn_files == True:
+        if create_nn_files:
             print 'Creating training files...'
-            createNNTrainingFile(training_data, features, impute, scaler, pca,
+            create_nn_training_file(training_data, features, impute, scaler, pca,
                 data_dir + training_nn_file)
-            createNNPreTrainFile(data_dir + pretrain_file, 
+            create_nn_pre_train_file(data_dir + pretrain_file,
                 data_dir + pretrain_nn_file, impute, scaler, pca)
         
-        if train_nn_model == True:
+        if train_nn_model:
             print 'Training the model...'
             train(code_dir + model_definition_file, data_dir)
         
@@ -283,18 +283,18 @@ def main():
         y_prob, y_est = predict(X, threshold, scaler, pca, data_dir + model_file)
         
         print 'Calculating AMS...'
-        ams = score(y, y_est, w)
-        print'AMS =', ams
+        ams_val = score(y, y_est, w)
+        print 'AMS =', ams_val
     
-    if create_submission == True:
+    if create_submission_file:
         print 'Reading in test data...'
-        test_data, X_test = processTestData(data_dir + test_file, features, impute)
+        test_data, X_test = process_test_data(data_dir + test_file, features, impute)
         
         print 'Predicting test data...'
         y_test_prob, y_test_est = predict(X_test, threshold, scaler, pca, data_dir + model_file)
         
         print 'Creating submission file...'
-        createSubmission(test_data, y_test_prob, y_test_est, data_dir + submit_file)
+        create_submission_file(test_data, y_test_prob, y_test_est, data_dir + submit_file)
     
     print 'Process complete.'
 

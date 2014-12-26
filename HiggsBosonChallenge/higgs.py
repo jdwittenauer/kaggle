@@ -19,12 +19,12 @@ from sklearn import preprocessing
 from sklearn import svm
 
 
-def AMS(s, b):
+def ams(s, b):
     """
     Approximate Median Significant function to evaluate solutions.
     """
     br = 10.0
-    radicand = 2 *( (s + b + br) * math.log(1.0 + s / (b + br)) - s)
+    radicand = 2 * ((s + b + br) * math.log(1.0 + s / (b + br)) - s)
     if radicand < 0:
         print 'Radicand is negative.'
         exit()
@@ -51,19 +51,19 @@ def save(model, filename):
     model_file.close()
 
 
-def processTrainingData(filename, features, impute, standardize, whiten):
+def process_training_data(filename, features, impute, standardize, whiten):
     """
     Reads in training data and prepares numpy arrays.
     """
     training_data = pd.read_csv(filename, sep=',')
     
     # add a nominal label (0, 1)
-    temp = training_data['Label'].replace(to_replace=['s','b'], value=[1,0])
+    temp = training_data['Label'].replace(to_replace=['s', 'b'], value=[1, 0])
     training_data['Nominal'] = temp
     
-    X = training_data.iloc[:,1:features+1].values
-    y = training_data.iloc[:,features+3].values
-    w = training_data.iloc[:,features+1].values
+    X = training_data.iloc[:, 1:features+1].values
+    y = training_data.iloc[:, features+3].values
+    w = training_data.iloc[:, features+1].values
     
     # optionally impute the -999 values
     if impute == 'mean':
@@ -74,13 +74,13 @@ def processTrainingData(filename, features, impute, standardize, whiten):
     
     # create a standardization transform
     scaler = None
-    if standardize == True:
+    if standardize:
         scaler = preprocessing.StandardScaler()
         scaler.fit(X)
     
     # create a PCA transform
     pca = None
-    if whiten == True:
+    if whiten:
         pca = decomposition.PCA(whiten=True)
         pca.fit(X)
     
@@ -99,20 +99,20 @@ def visualize(training_data, X, y, scaler, pca, features):
     # feature histograms
     fig1, ax1 = plt.subplots(4, 4, figsize=(20, 10))
     for i in range(16):
-        ax1[i%4, i/4].hist(X[:,i])
-        ax1[i%4, i/4].set_title(training_data.columns[i+1])
-        ax1[i%4, i/4].set_xlim((min(X[:,i]), max(X[:,i])))
+        ax1[i % 4, i / 4].hist(X[:, i])
+        ax1[i % 4, i / 4].set_title(training_data.columns[i + 1])
+        ax1[i % 4, i / 4].set_xlim((min(X[:, i]), max(X[:, i])))
     fig1.tight_layout()
     
     fig2, ax2 = plt.subplots(4, 4, figsize=(20, 10))
     for i in range(16, features):
-        ax2[i%4, (i-16)/4].hist(X[:,i])
-        ax2[i%4, (i-16)/4].set_title(training_data.columns[i+1])
-        ax2[i%4, (i-16)/4].set_xlim((min(X[:,i]), max(X[:,i])))
+        ax2[i % 4, (i - 16) / 4].hist(X[:, i])
+        ax2[i % 4, (i - 16) / 4].set_title(training_data.columns[i + 1])
+        ax2[i % 4, (i - 16) / 4].set_xlim((min(X[:, i]), max(X[:, i])))
     fig2.tight_layout()
     
     # covariance matrix
-    if scaler != None:
+    if scaler is not None:
         X = scaler.transform(X)
         
     cov = np.cov(X, rowvar=0)
@@ -123,15 +123,15 @@ def visualize(training_data, X, y, scaler, pca, features):
     ax3.set_title('Feature Covariance Matrix')
     
     # pca plots
-    if pca != None:
+    if pca is not None:
         X = pca.transform(X)
     
         fig4, ax4 = plt.subplots(figsize=(16, 10))
-        ax4.scatter(X[:,0], X[:,1], c=y)
+        ax4.scatter(X[:, 0], X[:, 1], c=y)
         ax4.set_title('First & Second Principal Components')
         
         fig5, ax5 = plt.subplots(figsize=(16, 10))
-        ax5.scatter(X[:,1], X[:,2], c=y)
+        ax5.scatter(X[:, 1], X[:, 2], c=y)
         ax5.set_title('Second & Third Principal Components')
 
 
@@ -139,10 +139,10 @@ def train(X, y, alg, scaler, pca):
     """
     Trains a new model using the training data.
     """     
-    if scaler != None:
+    if scaler is not None:
         X = scaler.transform(X)
     
-    if pca != None:
+    if pca is not None:
         X = pca.transform(X)
     
     t0 = time.time()
@@ -173,13 +173,13 @@ def predict(X, model, threshold, scaler, pca):
     Predicts the probability of a positive outcome and converts the
     probability to a binary prediction based on the cutoff percentage.
     """
-    if scaler != None:
+    if scaler is not None:
         X = scaler.transform(X)
     
-    if pca != None:
+    if pca is not None:
         X = pca.transform(X)
     
-    y_prob = model.predict_proba(X)[:,1]
+    y_prob = model.predict_proba(X)[:, 1]
     cutoff = np.percentile(y_prob, threshold)
     y_est = y_prob > cutoff
 
@@ -195,10 +195,10 @@ def score(y, y_est, w):
     s = np.sum(y_signal * (y_est == 1.0))
     b = np.sum(y_background * (y_est == 1.0))
     
-    return AMS(s, b)
+    return ams(s, b)
 
 
-def crossValidate(X, y, w, alg, scaler, pca, threshold):
+def cross_validate(X, y, w, alg, scaler, pca, threshold):
     """
     Perform cross-validation on the training set and compute the AMS scores.
     """
@@ -221,20 +221,20 @@ def crossValidate(X, y, w, alg, scaler, pca, threshold):
         # train the model
         model = train(X_train, y_train, alg, scaler, pca)
         
-        # predict and score preformance on the validation set
+        # predict and score performance on the validation set
         y_val_prob, y_val_est = predict(X_val, model, threshold, scaler, pca)
         scores[i] = score(y_val, y_val_est, w_val)
-        i = i + 1
+        i += 1
     
     return np.mean(scores)
     
 
-def processTestData(filename, features, impute):
+def process_test_data(filename, features, impute):
     """
     Reads in test data and prepares numpy arrays.
     """
     test_data = pd.read_csv(filename, sep=',')
-    X_test = test_data.iloc[:,1:features+1].values
+    X_test = test_data.iloc[:, 1:features+1].values
     
     if impute == 'mean':
         imp = preprocessing.Imputer(missing_values=-999)
@@ -245,9 +245,9 @@ def processTestData(filename, features, impute):
     return test_data, X_test
 
 
-def createSubmission(test_data, y_test_prob, y_test_est, submit_file):
+def create_submission(test_data, y_test_prob, y_test_est, submit_file):
     """
-    Create a new datafrane with the submission data.
+    Create a new data frame with the submission data.
     """
     temp = pd.DataFrame(y_test_prob, columns=['RankOrder'])
     temp2 = pd.DataFrame(y_test_est, columns=['Class'])
@@ -256,9 +256,9 @@ def createSubmission(test_data, y_test_prob, y_test_est, submit_file):
     # sort it so they're in the ascending order by probability
     submit = submit.sort(['RankOrder'], ascending=True)
     
-    # convert the probablities to rank order (required by the submission guidelines)
+    # convert the probabilities to rank order (required by the submission guidelines)
     for i in range(0, y_test_est.shape[0], 1):
-        submit.iloc[i,1] = i + 1
+        submit.iloc[i, 1] = i + 1
     
     # re-sort by event ID
     submit = submit.sort(['EventId'], ascending=True)
@@ -277,8 +277,8 @@ def main():
     # perform some initialization
     features = 30
     threshold = 85
-    alg = 'boost' # bayes, logistic, svm, boost
-    impute = 'none' # zeros, mean, none
+    alg = 'boost'  # bayes, logistic, svm, boost
+    impute = 'none'  # zeros, mean, none
     standardize = False
     whiten = False
     load_training_data = True
@@ -286,7 +286,7 @@ def main():
     train_model = False
     save_model = False
     create_visualizations = True
-    create_submission = False
+    create_submission_file = False
     code_dir = 'C:\\Users\\John\\Documents\\GitHub\\kaggle\\HiggsBosonChallenge\\'
     data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\Higgs\\'
     training_file = 'training.csv'
@@ -300,20 +300,20 @@ def main():
     print 'alg={0}, impute={1}, standardize={2}, whiten={3} threshold={4}'.format(
         alg, impute, standardize, whiten, threshold)
     
-    if load_training_data == True:
+    if load_training_data:
         print 'Reading in training data...'
-        training_data, X, y, w, scaler, pca = processTrainingData(
+        training_data, X, y, w, scaler, pca = process_training_data(
             data_dir + training_file, features, impute, standardize, whiten)
     
-    if create_visualizations == True:
+    if create_visualizations:
         print 'Creating visualizations...'
         visualize(training_data, X, y, scaler, pca, features)
     
-    if load_model == True:
+    if load_model:
         print 'Loading model from disk...'
         model = load(data_dir + model_file)
     
-    if train_model == True:
+    if train_model:
         print 'Training model on full data set...'
         model = train(X, y, alg, scaler, pca)
         
@@ -321,26 +321,26 @@ def main():
         y_prob, y_est = predict(X, model, threshold, scaler, pca)
            
         print 'Calculating AMS...'
-        ams = score(y, y_est, w)
-        print'AMS =', ams
+        ams_val = score(y, y_est, w)
+        print 'AMS =', ams_val
         
         print 'Performing cross-validation...'
-        val = crossValidate(X, y, w, alg, scaler, pca, threshold)
+        val = cross_validate(X, y, w, alg, scaler, pca, threshold)
         print'Cross-validation AMS =', val
     
-    if save_model == True:
+    if save_model:
         print 'Saving model to disk...'
         save(model, data_dir + model_file)
     
-    if create_submission == True:
+    if create_submission_file:
         print 'Reading in test data...'
-        test_data, X_test = processTestData(data_dir + test_file, features, impute)
+        test_data, X_test = process_test_data(data_dir + test_file, features, impute)
         
         print 'Predicting test data...'
         y_test_prob, y_test_est = predict(X_test, model, threshold, scaler, pca)
         
         print 'Creating submission file...'
-        createSubmission(test_data, y_test_prob, y_test_est, data_dir + submit_file)
+        create_submission_file(test_data, y_test_prob, y_test_est, data_dir + submit_file)
     
     print 'Process complete.'
 
