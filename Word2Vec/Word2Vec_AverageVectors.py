@@ -10,14 +10,16 @@
 # *************************************** #
 
 
-import os
+import sys
+sys.path.append('C:\\Users\\John\\PycharmProjects\\Kaggle\\Word2Vec')
+
 import logging
 import nltk.data
 import numpy as np
 import pandas as pd
 from gensim.models import Word2Vec
 from sklearn.ensemble import RandomForestClassifier
-from KaggleWord2VecUtility import KaggleWord2VecUtility
+from KaggleUtility import KaggleUtility
 
 
 def make_feature_vec(words, model, num_features):
@@ -25,7 +27,7 @@ def make_feature_vec(words, model, num_features):
     # paragraph
 
     # Pre-initialize an empty numpy array (for speed)
-    feature_vec = np.zeros(num_features, dtype="float32")
+    feature_vec = np.zeros(num_features, dtype='float32')
 
     nwords = 0
 
@@ -53,13 +55,13 @@ def get_avg_feature_vecs(reviews, model, num_features):
     counter = 0
 
     # Preallocate a 2D numpy array, for speed
-    review_feature_vecs = np.zeros((len(reviews), num_features), dtype="float32")
+    review_feature_vecs = np.zeros((len(reviews), num_features), dtype='float32')
 
     # Loop through the reviews
     for review in reviews:
         # Print a status message every 1000th review
         if counter % 1000 == 0:
-            print "Review %d of %d" % (counter, len(reviews))
+            print 'Review %d of %d' % (counter, len(reviews))
 
         # Call the function (defined above) that makes average feature vectors
         review_feature_vecs[counter] = make_feature_vec(review, model, num_features)
@@ -71,23 +73,22 @@ def get_avg_feature_vecs(reviews, model, num_features):
 
 def get_clean_reviews(reviews):
     clean_reviews = []
-    for review in reviews["review"]:
-        clean_reviews.append(KaggleWord2VecUtility.review_to_wordlist(review, remove_stopwords=True))
+    for review in reviews['review']:
+        clean_reviews.append(KaggleUtility.review_to_wordlist(review, remove_stopwords=True))
     return clean_reviews
 
 
 def main():
+    data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\Word2Vec\\'
+
     # Read data from files
-    train = pd.read_csv(os.path.join(os.path.dirname(__file__), 'data', 'labeledTrainData.tsv'),
-                        header=0, delimiter="\t", quoting=3)
-    test = pd.read_csv(os.path.join(os.path.dirname(__file__), 'data', 'testData.tsv'),
-                       header=0, delimiter="\t", quoting=3)
-    unlabeled_train = pd.read_csv(os.path.join(os.path.dirname(__file__), 'data', "unlabeledTrainData.tsv"),
-                                  header=0,  delimiter="\t", quoting=3)
+    train = pd.read_csv(data_dir + 'labeledTrainData.tsv', header=0, delimiter='\t', quoting=3)
+    test = pd.read_csv(data_dir + 'testData.tsv', header=0, delimiter='\t', quoting=3)
+    unlabeled_train = pd.read_csv(data_dir + 'unlabeledTrainData.tsv',  header=0,  delimiter='\t', quoting=3)
 
     # Verify the number of reviews that were read (100,000 in total)
-    print "Read %d labeled train reviews, %d labeled test reviews, and %d unlabeled reviews\n" % \
-          (train["review"].size, test["review"].size, unlabeled_train["review"].size)
+    print 'Read %d labeled train reviews, %d labeled test reviews, and %d unlabeled reviews\n' % \
+          (train['review'].size, test['review'].size, unlabeled_train['review'].size)
 
     # Load the punkt tokenizer
     tokenizer = nltk.data.load('tokenizers/punkt/english.pickle')
@@ -97,13 +98,13 @@ def main():
     # Initialize an empty list of sentences
     sentences = []
 
-    print "Parsing sentences from training set"
-    for review in train["review"]:
-        sentences += KaggleWord2VecUtility.review_to_sentences(review, tokenizer)
+    print 'Parsing sentences from training set'
+    for review in train['review']:
+        sentences += KaggleUtility.review_to_sentences(review, tokenizer)
 
-    print "Parsing sentences from unlabeled set"
-    for review in unlabeled_train["review"]:
-        sentences += KaggleWord2VecUtility.review_to_sentences(review, tokenizer)
+    print 'Parsing sentences from unlabeled set'
+    for review in unlabeled_train['review']:
+        sentences += KaggleUtility.review_to_sentences(review, tokenizer)
 
     # Set parameters and train the word2vec model
 
@@ -119,7 +120,7 @@ def main():
     downsampling = 1e-3   # Downsample setting for frequent words
 
     # Initialize and train the model (this will take some time)
-    print "Training Word2Vec model..."
+    print 'Training Word2Vec model...'
     model = Word2Vec(sentences, workers=num_workers, size=num_features, min_count=min_word_count,
                      window=context, sample=downsampling, seed=1)
 
@@ -129,23 +130,23 @@ def main():
 
     # It can be helpful to create a meaningful model name and
     # save the model for later use. You can load it later using Word2Vec.load()
-    model_name = "300features_40minwords_10context"
-    model.save(model_name)
+    model_name = '300features_40minwords_10context'
+    model.save(data_dir + model_name)
 
-    model.doesnt_match("man woman child kitchen".split())
-    model.doesnt_match("france england germany berlin".split())
-    model.doesnt_match("paris berlin london austria".split())
-    model.most_similar("man")
-    model.most_similar("queen")
-    model.most_similar("awful")
+    model.doesnt_match('man woman child kitchen'.split())
+    model.doesnt_match('france england germany berlin'.split())
+    model.doesnt_match('paris berlin london austria'.split())
+    model.most_similar('man')
+    model.most_similar('queen')
+    model.most_similar('awful')
 
     # Create average vectors for the training and test sets
 
-    print "Creating average feature vecs for training reviews"
+    print 'Creating average feature vecs for training reviews'
 
     train_data_vecs = get_avg_feature_vecs(get_clean_reviews(train), model, num_features)
 
-    print "Creating average feature vecs for test reviews"
+    print 'Creating average feature vecs for test reviews'
 
     test_data_vecs = get_avg_feature_vecs(get_clean_reviews(test), model, num_features)
 
@@ -154,16 +155,16 @@ def main():
     # Fit a random forest to the training data, using 100 trees
     forest = RandomForestClassifier(n_estimators=100)
 
-    print "Fitting a random forest to labeled training data..."
-    forest = forest.fit(train_data_vecs, train["sentiment"])
+    print 'Fitting a random forest to labeled training data...'
+    forest = forest.fit(train_data_vecs, train['sentiment'])
 
     # Test & extract results
     result = forest.predict(test_data_vecs)
 
     # Write the test results
-    output = pd.DataFrame(data={"id": test["id"], "sentiment": result})
-    output.to_csv("Word2Vec_AverageVectors.csv", index=False, quoting=3)
-    print "Wrote Word2Vec_AverageVectors.csv"
+    output = pd.DataFrame(data={'id': test['id'], 'sentiment': result})
+    output.to_csv(data_dir + 'Word2Vec_AverageVectors.csv', index=False, quoting=3)
+    print 'Wrote Word2Vec_AverageVectors.csv'
 
 
 if __name__ == "__main__":

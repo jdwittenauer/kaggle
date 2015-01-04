@@ -10,8 +10,8 @@ from bs4 import BeautifulSoup
 from nltk.corpus import stopwords
 
 
-class KaggleWord2VecUtility(object):
-    """KaggleWord2VecUtility is a utility class for processing raw HTML text into segments for further learning."""
+class KaggleUtility(object):
+    """Utility class for processing raw HTML text into segments for further learning."""
 
     @staticmethod
     def review_to_wordlist(review, remove_stopwords=False):
@@ -22,14 +22,14 @@ class KaggleWord2VecUtility(object):
         review_text = BeautifulSoup(review).get_text()
 
         # 2. Remove non-letters
-        review_text = re.sub("[^a-zA-Z]", " ", review_text)
+        review_text = re.sub('[^a-zA-Z]', ' ', review_text)
 
         # 3. Convert words to lower case and split them
         words = review_text.lower().split()
 
         # 4. Optionally remove stop words (false by default)
         if remove_stopwords:
-            stops = set(stopwords.words("english"))
+            stops = set(stopwords.words('english'))
             words = [w for w in words if w not in stops]
 
         # 5. Return a list of words
@@ -49,7 +49,7 @@ class KaggleWord2VecUtility(object):
             # If a sentence is empty, skip it
             if len(raw_sentence) > 0:
                 # Otherwise, call review_to_wordlist to get a list of words
-                sentences.append(KaggleWord2VecUtility.review_to_wordlist(raw_sentence, remove_stopwords))
+                sentences.append(KaggleUtility.review_to_wordlist(raw_sentence, remove_stopwords))
 
         # Return the list of sentences (each sentence is a list of words,
         # so this returns a list of lists

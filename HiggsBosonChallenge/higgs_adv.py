@@ -390,7 +390,7 @@ def main():
         y_test_prob, y_test_est = predict(X_test, model, alg, threshold, scaler, pca)
         
         print 'Creating submission file...'
-        create_submission_file(test_data, y_test_prob, y_test_est, data_dir + submit_file)
+        create_submission(test_data, y_test_prob, y_test_est, data_dir + submit_file)
     
     print 'Process complete.'
 
