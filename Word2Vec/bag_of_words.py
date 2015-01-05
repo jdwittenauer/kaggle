@@ -15,7 +15,7 @@ sys.path.append('C:\\Users\\John\\PycharmProjects\\Kaggle\\Word2Vec')
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.ensemble import RandomForestClassifier
-from KaggleUtility import KaggleUtility
+from kaggle_utility import KaggleUtility
 
 
 def main():
