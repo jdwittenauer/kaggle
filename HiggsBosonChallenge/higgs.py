@@ -6,7 +6,10 @@
 distribution of 64-bit Python 2.7.
 """
 
-import os, math, time, pickle
+import os
+import math
+import time
+import pickle
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -154,8 +157,8 @@ def train(X, y, alg, scaler, pca):
     elif alg == 'svm':
         model = svm.SVC()
     elif alg == 'boost':
-        model = ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=7,
-            min_samples_split=200, min_samples_leaf=200, max_features=30)
+        model = ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=7, min_samples_split=200,
+                                                    min_samples_leaf=200, max_features=30)
     else:
         print 'No model defined for ' + alg
         exit()
