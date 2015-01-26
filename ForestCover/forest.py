@@ -7,7 +7,6 @@ distribution of 64-bit Python 2.7.
 """
 
 import os
-import math
 import time
 import pickle
 import numpy as np
@@ -37,13 +36,19 @@ def save(model, filename):
     model_file.close()
 
 
-def process_training_data(filename, features, standardize, whiten):
+def process_training_data(filename, features, impute, standardize, whiten):
     """
     Reads in training data and prepares numpy arrays.
     """
     training_data = pd.read_csv(filename, sep=',')
 
-    X = training_data.iloc[:, 0:features].values
+    # impute missing values
+    if impute == 'mean':
+        training_data.fillna(training_data.mean())
+    elif impute == 'zeros':
+        training_data.fillna(0)
+
+    X = training_data.iloc[:, 1:features].values
     y = training_data.iloc[:, features+1].values
 
     # create a standardization transform
@@ -76,10 +81,14 @@ def visualize(training_data, X, y, scaler, pca, features):
         fig, ax = plt.subplots(4, 4, figsize=(20, 10))
         for j in range(16):
             index = (i * 16) + j
-            if index < features:
-                ax[j % 4, j / 4].hist(X[:, index], bins=30)
-                ax[j % 4, j / 4].set_title(training_data.columns[index + 1])
-                ax[j % 4, j / 4].set_xlim((min(X[:, index]), max(X[:, index])))
+            if index < (features - 1):
+                ax[j / 4, j % 4].hist(X[:, index], bins=30)
+                ax[j / 4, j % 4].set_title(training_data.columns[index + 1])
+                ax[j / 4, j % 4].set_xlim((min(X[:, index]), max(X[:, index])))
+            elif index < features:
+                ax[j / 4, j % 4].hist(y, bins=30)
+                ax[j / 4, j % 4].set_title(training_data.columns[index + 1])
+                ax[j / 4, j % 4].set_xlim((min(y), max(y)))
         fig.tight_layout()
 
     # correlation matrix
@@ -95,13 +104,20 @@ def visualize(training_data, X, y, scaler, pca, features):
     if pca is not None:
         X = pca.transform(X)
 
+        fig3, ax3 = plt.subplots(figsize=(16, 10))
+        ax3.scatter(X[:, 0], X[:, 1], c=y, cmap=plt.get_cmap('Reds'))
+        ax3.set_title('First & Second Principal Components')
+        fig3.tight_layout()
+
         fig4, ax4 = plt.subplots(figsize=(16, 10))
-        ax4.scatter(X[:, 0], X[:, 1], c=y)
-        ax4.set_title('First & Second Principal Components')
+        ax4.scatter(X[:, 1], X[:, 2], c=y, cmap=plt.get_cmap('Reds'))
+        ax4.set_title('Second & Third Principal Components')
+        fig4.tight_layout()
 
         fig5, ax5 = plt.subplots(figsize=(16, 10))
-        ax5.scatter(X[:, 1], X[:, 2], c=y)
-        ax5.set_title('Second & Third Principal Components')
+        ax5.scatter(X[:, 2], X[:, 3], c=y, cmap=plt.get_cmap('Reds'))
+        ax5.set_title('Third & Fourth Principal Components')
+        fig5.tight_layout()
 
 
 def train(X, y, algorithm, scaler, pca, fit):
@@ -117,15 +133,19 @@ def train(X, y, algorithm, scaler, pca, fit):
     if algorithm == 'bayes':
         model = naive_bayes.GaussianNB()
     elif algorithm == 'logistic':
-        model = linear_model.LogisticRegression()
+        model = linear_model.LogisticRegression(penalty='l2', C=1.0)
     elif algorithm == 'svm':
-        model = svm.SVC()
+        model = svm.SVC(C=1.0, kernel='rbf', shrinking=True, probability=False, cache_size=200)
+    elif algorithm == 'sgd':
+        model = linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=0.0001,
+                                           n_iter=1000, shuffle=False, n_jobs=-1)
     elif algorithm == 'forest':
-        model = RandomForestClassifier(n_estimators=100, max_depth=7, min_samples_split=200,
-                                       min_samples_leaf=200, max_features=30)
+        model = RandomForestClassifier(n_estimators=10, criterion='gini', max_features='auto', max_depth=None,
+                                       min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
     elif algorithm == 'boost':
-        model = GradientBoostingClassifier(n_estimators=100, max_depth=7, min_samples_split=200,
-                                           min_samples_leaf=200, max_features=30)
+        model = GradientBoostingClassifier(loss='deviance', learning_rate=0.1, n_estimators=100, subsample=1.0,
+                                           min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
+                                           max_leaf_nodes=None)
     else:
         print 'No model defined for ' + algorithm
         exit()
@@ -173,7 +193,7 @@ def predict_probability(X, model, scaler, pca):
     return y_prob
 
 
-def score(X, y, model, scaler, pca, metric):
+def score(X, y, model, scaler, pca):
     """
     Create weighted signal and background sets and calculate the AMS.
     """
@@ -183,31 +203,48 @@ def score(X, y, model, scaler, pca, metric):
     if pca is not None:
         X = pca.transform(X)
 
-    if metric is None:
-        y_est = model.score(X, y)
-
-    return y_est
+    return model.score(X, y)
 
 
-def cross_validate(X, y, algorithm, scaler, pca):
+def cross_validate(X, y, algorithm, scaler, pca, metric):
     """
-    Performs cross-validation to estimate the true performance of hte model.
+    Performs cross-validation to estimate the true performance of the model.
     """
-    return None
+    model = train(X, y, algorithm, scaler, pca, False)
+
+    if metric != 'none':
+        scores = cross_validation.cross_val_score(model, X, y, cv=5, scoring=metric)
+    else:
+        scores = cross_validation.cross_val_score(model, X, y, cv=5)
+
+    return np.mean(scores)
 
 
-def process_test_data():
+def process_test_data(filename, features, impute):
     """
     Reads in the test data set and prepares it for prediction by the model.
     """
-    return None
+    test_data = pd.read_csv(filename, sep=',')
+
+    # impute missing values
+    if impute == 'mean':
+        test_data.fillna(test_data.mean())
+    elif impute == 'zeros':
+        test_data.fillna(0)
+
+    X_test = test_data.iloc[:, 1:features].values
+
+    return test_data, X_test
 
 
-def generate_submission_file():
+def create_submission(test_data, y_est, submit_file):
     """
     Create a new submission file with test data and predictions generated by the model.
     """
-    return None
+    submit = pd.DataFrame(columns=['Id', 'Cover_Type'])
+    submit['Id'] = test_data['Id']
+    submit['Cover_Type'] = y_est
+    submit.to_csv(submit_file, sep=',', index=False, index_label=False)
 
 
 def generate_features():
@@ -224,6 +261,13 @@ def select_features():
     return None
 
 
+def grid_search():
+    """
+    Performs an exhaustive search over the specified model parameters.
+    """
+    return None
+
+
 def ensemble():
     """
     Creates an ensemble of many models together.
@@ -235,9 +279,9 @@ def main():
     # perform some initialization
     load_training_data = True
     load_model = False
-    train_model = False
+    train_model = True
     save_model = False
-    create_visualizations = True
+    create_visualizations = False
     create_submission_file = False
     code_dir = 'C:\\Users\\John\\PycharmProjects\\Kaggle\\ForestCover\\'
     data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\ForestCover\\'
@@ -246,7 +290,9 @@ def main():
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
     features = 54
-    algorithm = 'logistic'  # logistic, bayes, svm, forest, boost
+    algorithm = 'bayes'  # logistic, bayes, svm, sgd, forest, boost
+    metric = 'none'  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score, none
+    impute = 'none'  # zeros, mean, none
     standardize = False
     whiten = False
 
@@ -258,7 +304,7 @@ def main():
     if load_training_data:
         print 'Reading in training data...'
         training_data, X, y, scaler, pca = process_training_data(
-            data_dir + training_file, features, standardize, whiten)
+            data_dir + training_file, features, impute, standardize, whiten)
 
     if create_visualizations:
         print 'Creating visualizations...'
@@ -270,30 +316,29 @@ def main():
 
     if train_model:
         print 'Training model on full data set...'
-        model = train(X, y, algorithm, scaler, pca, False)
+        model = train(X, y, algorithm, scaler, pca, True)
 
-        print 'Calculating predictions...'
-        # TODO
-
-        print 'Calculating score...'
-        # TODO
+        print 'Calculating training score...'
+        model_score = score(X, y, model, scaler, pca)
+        print 'Training score =', model_score
 
         print 'Performing cross-validation...'
-        # TODO
+        cross_val_score = cross_validate(X, y, algorithm, scaler, pca, metric)
+        print 'Cross-validation score =', cross_val_score
 
     if save_model:
         print 'Saving model to disk...'
-        # TODO
+        save(model, data_dir + model_file)
 
     if create_submission_file:
         print 'Reading in test data...'
-        # TODO
+        test_data, X_test = process_test_data(data_dir + test_file, features, impute)
 
         print 'Predicting test data...'
-        # TODO
+        y_est = predict(X_test, model, scaler, pca)
 
         print 'Creating submission file...'
-        # TODO
+        create_submission(test_data, y_est, data_dir + submit_file)
 
     print 'Process complete.'
 
