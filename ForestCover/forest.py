@@ -120,7 +120,7 @@ def visualize(training_data, X, y, scaler, pca, features):
         fig5.tight_layout()
 
 
-def train(X, y, algorithm, scaler, pca, fit):
+def train(training_data, X, y, algorithm, scaler, pca, fit):
     """
     Trains a new model using the training data.
     """
@@ -157,8 +157,21 @@ def train(X, y, algorithm, scaler, pca, fit):
         print 'Model trained in {0:3f} s.'.format(t1 - t0)
 
         if algorithm == 'forest' or algorithm == 'boost':
-            # generate a plot showing model performance and relative feature importance
-            importances = model.feature_importances_
+            # generate a plot showing relative feature importance
+            fig, ax = plt.subplots(figsize=(16, 10))
+
+            importance = model.feature_importances_
+            importance = 100.0 * (importance / importance.max())
+            importance = importance[0:30]
+            sorted_idx = np.argsort(importance)
+            pos = np.arange(sorted_idx.shape[0])
+            ax.set_title('Variable Importance')
+            ax.barh(pos, importance[sorted_idx], align='center')
+            ax.set_yticks(pos)
+            ax.set_yticklabels(training_data.columns[sorted_idx + 1])
+            ax.set_xlabel('Relative Importance')
+
+            fig.tight_layout()
 
     return model
 
@@ -206,11 +219,11 @@ def score(X, y, model, scaler, pca):
     return model.score(X, y)
 
 
-def cross_validate(X, y, algorithm, scaler, pca, metric):
+def cross_validate(training_data, X, y, algorithm, scaler, pca, metric):
     """
     Performs cross-validation to estimate the true performance of the model.
     """
-    model = train(X, y, algorithm, scaler, pca, False)
+    model = train(training_data, X, y, algorithm, scaler, pca, False)
 
     if metric != 'none':
         scores = cross_validation.cross_val_score(model, X, y, cv=5, scoring=metric)
@@ -290,7 +303,7 @@ def main():
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
     features = 54
-    algorithm = 'bayes'  # logistic, bayes, svm, sgd, forest, boost
+    algorithm = 'boost'  # logistic, bayes, svm, sgd, forest, boost
     metric = 'none'  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score, none
     impute = 'none'  # zeros, mean, none
     standardize = False
@@ -316,14 +329,14 @@ def main():
 
     if train_model:
         print 'Training model on full data set...'
-        model = train(X, y, algorithm, scaler, pca, True)
+        model = train(training_data, X, y, algorithm, scaler, pca, True)
 
         print 'Calculating training score...'
         model_score = score(X, y, model, scaler, pca)
         print 'Training score =', model_score
 
         print 'Performing cross-validation...'
-        cross_val_score = cross_validate(X, y, algorithm, scaler, pca, metric)
+        cross_val_score = cross_validate(training_data, X, y, algorithm, scaler, pca, metric)
         print 'Cross-validation score =', cross_val_score
 
     if save_model:
