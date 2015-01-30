@@ -15,6 +15,7 @@ import matplotlib.pyplot as plt
 import seaborn as sb
 from sklearn import *
 from sklearn.ensemble import *
+from sklearn.learning_curve import *
 
 
 def load(filename):
@@ -224,13 +225,35 @@ def cross_validate(training_data, X, y, algorithm, scaler, pca, metric):
     Performs cross-validation to estimate the true performance of the model.
     """
     model = train(training_data, X, y, algorithm, scaler, pca, False)
-
-    if metric != 'none':
-        scores = cross_validation.cross_val_score(model, X, y, cv=5, scoring=metric)
-    else:
-        scores = cross_validation.cross_val_score(model, X, y, cv=5)
+    scores = cross_validation.cross_val_score(model, X, y, cv=5, scoring=metric)
 
     return np.mean(scores)
+
+
+def plot_learning_curve(training_data, X, y, algorithm, scaler, pca, metric):
+    """
+    Plots a learning curve showing model performance against both training and
+    validation data sets as a function of the number of training samples.
+    """
+    model = train(training_data, X, y, algorithm, scaler, pca, False)
+    train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric)
+    train_scores_mean = np.mean(train_scores, axis=1)
+    train_scores_std = np.std(train_scores, axis=1)
+    test_scores_mean = np.mean(test_scores, axis=1)
+    test_scores_std = np.std(test_scores, axis=1)
+
+    fig, ax = plt.subplots(figsize=(16, 10))
+    ax.set_title('Learning Curve')
+    ax.set_xlabel('Training Examples')
+    ax.set_ylabel('Score')
+    ax.fill_between(train_sizes, train_scores_mean - train_scores_std, train_scores_mean + train_scores_std,
+                    alpha=0.1, color="r")
+    ax.fill_between(train_sizes, test_scores_mean - test_scores_std, test_scores_mean + test_scores_std,
+                    alpha=0.1, color="g")
+    ax.plot(train_sizes, train_scores_mean, 'o-', color="r", label="Training score")
+    ax.plot(train_sizes, test_scores_mean, 'o-', color="g", label="Cross-validation score")
+    ax.legend(loc='best')
+    fig.tight_layout()
 
 
 def process_test_data(filename, features, impute):
@@ -293,6 +316,7 @@ def main():
     load_training_data = True
     load_model = False
     train_model = True
+    create_learning_curve = True
     save_model = False
     create_visualizations = False
     create_submission_file = False
@@ -303,9 +327,9 @@ def main():
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
     features = 54
-    algorithm = 'boost'  # logistic, bayes, svm, sgd, forest, boost
-    metric = 'none'  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score, none
+    algorithm = 'logistic'  # bayes, logistic, svm, sgd, forest, boost
     impute = 'none'  # zeros, mean, none
+    metric = None  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score
     standardize = False
     whiten = False
 
@@ -336,8 +360,11 @@ def main():
         print 'Training score =', model_score
 
         print 'Performing cross-validation...'
-        cross_val_score = cross_validate(training_data, X, y, algorithm, scaler, pca, metric)
-        print 'Cross-validation score =', cross_val_score
+        if create_learning_curve:
+            plot_learning_curve(training_data, X, y, algorithm, scaler, pca, metric)
+        else:
+            cross_val_score = cross_validate(training_data, X, y, algorithm, scaler, pca, metric)
+            print 'Cross-validation score =', cross_val_score
 
     if save_model:
         print 'Saving model to disk...'
