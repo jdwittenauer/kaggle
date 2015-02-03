@@ -9,13 +9,13 @@ distribution of 64-bit Python 2.7.
 import os
 import time
 import pickle
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sb
 from sklearn import *
 from sklearn.ensemble import *
 from sklearn.learning_curve import *
+from sklearn.grid_search import *
 
 
 def load(filename):
@@ -37,7 +37,7 @@ def save(model, filename):
     model_file.close()
 
 
-def process_training_data(filename, features, impute, standardize, whiten):
+def process_training_data(filename, features, impute):
     """
     Reads in training data and prepares numpy arrays.
     """
@@ -52,6 +52,13 @@ def process_training_data(filename, features, impute, standardize, whiten):
     X = training_data.iloc[:, 1:features].values
     y = training_data.iloc[:, features+1].values
 
+    return training_data, X, y
+
+
+def create_transforms(X, standardize, whiten):
+    """
+    Creates transform objects to apply before training or scoring.
+    """
     # create a standardization transform
     scaler = None
     if standardize:
@@ -64,7 +71,20 @@ def process_training_data(filename, features, impute, standardize, whiten):
         pca = decomposition.PCA(whiten=True)
         pca.fit(X)
 
-    return training_data, X, y, scaler, pca
+    return scaler, pca
+
+
+def apply_transforms(X, scaler, pca):
+    """
+    Applies pre-computed transformations to a data set.
+    """
+    if scaler is not None:
+        X = scaler.transform(X)
+
+    if pca is not None:
+        X = pca.transform(X)
+
+    return X
 
 
 def visualize(training_data, X, y, scaler, pca, features):
@@ -76,7 +96,7 @@ def visualize(training_data, X, y, scaler, pca, features):
     to switch between display modes.
     """
 
-    # feature histograms
+    print('Generating individual feature histograms...')
     num_histograms = features / 16 if features % 16 == 0 else features / 16 + 1
     for i in range(num_histograms):
         fig, ax = plt.subplots(4, 4, figsize=(20, 10))
@@ -92,7 +112,7 @@ def visualize(training_data, X, y, scaler, pca, features):
                 ax[j / 4, j % 4].set_xlim((min(y), max(y)))
         fig.tight_layout()
 
-    # correlation matrix
+    print('Generating correlation matrix...')
     if scaler is not None:
         X = scaler.transform(X)
 
@@ -101,35 +121,42 @@ def visualize(training_data, X, y, scaler, pca, features):
     sb.corrplot(training_data, annot=False, sig_stars=False, diag_names=False, cmap=colormap, ax=ax2)
     fig2.tight_layout()
 
-    # pca plots
     if pca is not None:
+        print('Generating principal component plots...')
         X = pca.transform(X)
+        class_count = np.count_nonzero(np.unique(y))
+        colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
 
-        fig3, ax3 = plt.subplots(figsize=(16, 10))
-        ax3.scatter(X[:, 0], X[:, 1], c=y, cmap=plt.get_cmap('Reds'))
+        fig3, ax3 = plt.subplots(figsize=(16, 10), projection='3d')
+        for i in range(class_count):
+            class_idx = i + 1  # add 1 if class index start at 1 instead of 0
+            ax3.scatter(X[y == class_idx, 0], X[y == class_idx, 1], X[y == class_idx, 2],  c=colors[i], label=class_idx)
         ax3.set_title('First & Second Principal Components')
+        ax3.legend()
         fig3.tight_layout()
 
         fig4, ax4 = plt.subplots(figsize=(16, 10))
-        ax4.scatter(X[:, 1], X[:, 2], c=y, cmap=plt.get_cmap('Reds'))
+        for i in range(class_count):
+            class_idx = i + 1  # add 1 if class index start at 1 instead of 0
+            ax4.scatter(X[y == class_idx, 1], X[y == class_idx, 2], c=colors[i], label=class_idx)
         ax4.set_title('Second & Third Principal Components')
+        ax4.legend()
         fig4.tight_layout()
 
         fig5, ax5 = plt.subplots(figsize=(16, 10))
-        ax5.scatter(X[:, 2], X[:, 3], c=y, cmap=plt.get_cmap('Reds'))
+        for i in range(class_count):
+            class_idx = i + 1  # add 1 if class index start at 1 instead of 0
+            ax5.scatter(X[y == class_idx, 2], X[y == class_idx, 3], c=colors[i], label=class_idx)
         ax5.set_title('Third & Fourth Principal Components')
+        ax5.legend()
         fig5.tight_layout()
 
 
-def train(training_data, X, y, algorithm, scaler, pca, fit):
+def define_model(algorithm):
     """
-    Trains a new model using the training data.
+    Defines and returns a model object of the designated type.
     """
-    if scaler is not None:
-        X = scaler.transform(X)
-
-    if pca is not None:
-        X = pca.transform(X)
+    model = None
 
     if algorithm == 'bayes':
         model = naive_bayes.GaussianNB()
@@ -148,31 +175,39 @@ def train(training_data, X, y, algorithm, scaler, pca, fit):
                                            min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
                                            max_leaf_nodes=None)
     else:
-        print 'No model defined for ' + algorithm
+        print('No model defined for ' + algorithm)
         exit()
 
-    if fit:
-        t0 = time.time()
-        model.fit(X, y)
-        t1 = time.time()
-        print 'Model trained in {0:3f} s.'.format(t1 - t0)
+    return model
 
-        if algorithm == 'forest' or algorithm == 'boost':
-            # generate a plot showing relative feature importance
-            fig, ax = plt.subplots(figsize=(16, 10))
 
-            importance = model.feature_importances_
-            importance = 100.0 * (importance / importance.max())
-            importance = importance[0:30]
-            sorted_idx = np.argsort(importance)
-            pos = np.arange(sorted_idx.shape[0])
-            ax.set_title('Variable Importance')
-            ax.barh(pos, importance[sorted_idx], align='center')
-            ax.set_yticks(pos)
-            ax.set_yticklabels(training_data.columns[sorted_idx + 1])
-            ax.set_xlabel('Relative Importance')
+def train(training_data, X, y, algorithm, scaler, pca):
+    """
+    Trains a new model using the training data.
+    """
+    t0 = time.time()
+    model = define_model(algorithm)
+    X = apply_transforms(X, scaler, pca)
+    model.fit(X, y)
+    t1 = time.time()
+    print('Model trained in {0:3f} s.'.format(t1 - t0))
 
-            fig.tight_layout()
+    if algorithm == 'forest' or algorithm == 'boost':
+        print('Generating feature importance plot...')
+        fig, ax = plt.subplots(figsize=(16, 10))
+
+        importance = model.feature_importances_
+        importance = 100.0 * (importance / importance.max())
+        importance = importance[0:30]
+        sorted_idx = np.argsort(importance)
+        pos = np.arange(sorted_idx.shape[0])
+        ax.set_title('Variable Importance')
+        ax.barh(pos, importance[sorted_idx], align='center')
+        ax.set_yticks(pos)
+        ax.set_yticklabels(training_data.columns[sorted_idx + 1])
+        ax.set_xlabel('Relative Importance')
+
+        fig.tight_layout()
 
     return model
 
@@ -181,12 +216,7 @@ def predict(X, model, scaler, pca):
     """
     Predicts the class label.
     """
-    if scaler is not None:
-        X = scaler.transform(X)
-
-    if pca is not None:
-        X = pca.transform(X)
-
+    X = apply_transforms(X, scaler, pca)
     y_est = model.predict(X)
 
     return y_est
@@ -196,12 +226,7 @@ def predict_probability(X, model, scaler, pca):
     """
     Predicts the class probabilities.
     """
-    if scaler is not None:
-        X = scaler.transform(X)
-
-    if pca is not None:
-        X = pca.transform(X)
-
+    X = apply_transforms(X, scaler, pca)
     y_prob = model.predict_proba(X)[:, 1]
 
     return y_prob
@@ -211,32 +236,36 @@ def score(X, y, model, scaler, pca):
     """
     Create weighted signal and background sets and calculate the AMS.
     """
-    if scaler is not None:
-        X = scaler.transform(X)
-
-    if pca is not None:
-        X = pca.transform(X)
+    X = apply_transforms(X, scaler, pca)
 
     return model.score(X, y)
 
 
-def cross_validate(training_data, X, y, algorithm, scaler, pca, metric):
+def cross_validate(X, y, algorithm, scaler, pca, metric):
     """
     Performs cross-validation to estimate the true performance of the model.
     """
-    model = train(training_data, X, y, algorithm, scaler, pca, False)
-    scores = cross_validation.cross_val_score(model, X, y, cv=5, scoring=metric)
+    model = define_model(algorithm)
+    X = apply_transforms(X, scaler, pca)
+
+    t0 = time.time()
+    scores = cross_validation.cross_val_score(model, X, y, scoring=metric, cv=3, n_jobs=-1, verbose=1)
+    t1 = time.time()
+    print('Cross-validation completed in {0:3f} s.'.format(t1 - t0))
 
     return np.mean(scores)
 
 
-def plot_learning_curve(training_data, X, y, algorithm, scaler, pca, metric):
+def plot_learning_curve(X, y, algorithm, scaler, pca, metric):
     """
     Plots a learning curve showing model performance against both training and
     validation data sets as a function of the number of training samples.
     """
-    model = train(training_data, X, y, algorithm, scaler, pca, False)
-    train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric)
+
+    model = define_model(algorithm)
+    X = apply_transforms(X, scaler, pca)
+
+    train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric, cv=3, n_jobs=-1, verbose=1)
     train_scores_mean = np.mean(train_scores, axis=1)
     train_scores_std = np.std(train_scores, axis=1)
     test_scores_mean = np.mean(test_scores, axis=1)
@@ -254,6 +283,34 @@ def plot_learning_curve(training_data, X, y, algorithm, scaler, pca, metric):
     ax.plot(train_sizes, test_scores_mean, 'o-', color="g", label="Cross-validation score")
     ax.legend(loc='best')
     fig.tight_layout()
+
+
+def parameter_search(X, y, algorithm, scaler, pca, metric):
+    """
+    Performs an exhaustive search over the specified model parameters.
+    """
+    model = define_model(algorithm)
+    X = apply_transforms(X, scaler, pca)
+    param_grid = None
+
+    if algorithm == 'bayes':
+        param_grid = None
+    elif algorithm == 'logistic':
+        param_grid = None
+    elif algorithm == 'svm':
+        param_grid = [{'C': [1, 10, 100, 1000], 'kernel': ['linear']},
+                      {'C': [1, 10, 100, 1000], 'gamma': [0.001, 0.0001], 'kernel': ['rbf']}]
+    elif algorithm == 'sgd':
+        param_grid = None
+    elif algorithm == 'forest':
+        param_grid = None
+    elif algorithm == 'boost':
+        param_grid = None
+
+    grid_estimator = GridSearchCV(model, param_grid, scoring=metric, cv=3, n_jobs=-1, verbose=1)
+    grid_estimator.fit(X, y)
+
+    return grid_estimator.best_estimator_, grid_estimator.best_params_, grid_estimator.best_score_
 
 
 def process_test_data(filename, features, impute):
@@ -283,6 +340,13 @@ def create_submission(test_data, y_est, submit_file):
     submit.to_csv(submit_file, sep=',', index=False, index_label=False)
 
 
+def plot_roc_curve():
+    """
+    Plots a receiver operating characteristic (ROC) curve for the given classifier.
+    """
+    return None
+
+
 def generate_features():
     """
     Generates new derived features to add to the data set for model training.
@@ -297,13 +361,6 @@ def select_features():
     return None
 
 
-def grid_search():
-    """
-    Performs an exhaustive search over the specified model parameters.
-    """
-    return None
-
-
 def ensemble():
     """
     Creates an ensemble of many models together.
@@ -314,11 +371,12 @@ def ensemble():
 def main():
     # perform some initialization
     load_training_data = True
+    create_visualizations = True
     load_model = False
-    train_model = True
-    create_learning_curve = True
+    train_model = False
+    create_learning_curve = False
+    perform_grid_search = False
     save_model = False
-    create_visualizations = False
     create_submission_file = False
     code_dir = 'C:\\Users\\John\\PycharmProjects\\Kaggle\\ForestCover\\'
     data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\ForestCover\\'
@@ -335,52 +393,64 @@ def main():
 
     os.chdir(code_dir)
 
-    print 'Starting process...'
-    print 'algorithm={0}, standardize={1}, whiten={2}'.format(algorithm, standardize, whiten)
+    print('Starting process...')
+    print('Algorithm={0}, Impute={1} Standardize={2}, Whiten={3}'.format(algorithm, impute, standardize, whiten))
+    training_data, X, y, scaler, pca, model = None
 
     if load_training_data:
-        print 'Reading in training data...'
-        training_data, X, y, scaler, pca = process_training_data(
-            data_dir + training_file, features, impute, standardize, whiten)
+        print('Reading in training data...')
+        training_data, X, y = process_training_data(data_dir + training_file, features, impute)
+
+    if standardize or whiten:
+        print('Creating data transforms...')
+        scaler, pca = create_transforms(X, standardize, whiten)
 
     if create_visualizations:
-        print 'Creating visualizations...'
+        print('Creating visualizations...')
         visualize(training_data, X, y, scaler, pca, features)
 
     if load_model:
-        print 'Loading model from disk...'
+        print('Loading model from disk...')
         model = load(data_dir + model_file)
 
     if train_model:
-        print 'Training model on full data set...'
-        model = train(training_data, X, y, algorithm, scaler, pca, True)
+        print('Training model on full data set...')
+        model = train(training_data, X, y, algorithm, scaler, pca)
 
-        print 'Calculating training score...'
+        print('Calculating training score...')
         model_score = score(X, y, model, scaler, pca)
-        print 'Training score =', model_score
+        print('Training score ='), model_score
 
-        print 'Performing cross-validation...'
         if create_learning_curve:
-            plot_learning_curve(training_data, X, y, algorithm, scaler, pca, metric)
+            print('Generating learning curve...')
+            plot_learning_curve(X, y, algorithm, scaler, pca, metric)
         else:
-            cross_val_score = cross_validate(training_data, X, y, algorithm, scaler, pca, metric)
-            print 'Cross-validation score =', cross_val_score
+            print('Performing cross-validation...')
+            cross_val_score = cross_validate(X, y, algorithm, scaler, pca, metric)
+            print('Cross-validation score ='), cross_val_score
+
+    if perform_grid_search:
+        print('Performing hyper-parameter grid search...')
+        best_model, best_params, best_score = parameter_search(X, y, algorithm, scaler, pca, metric)
+        print('Best model = ', best_model)
+        print('Best params = ', best_params)
+        print('Best score = ', best_score)
 
     if save_model:
-        print 'Saving model to disk...'
+        print('Saving model to disk...')
         save(model, data_dir + model_file)
 
     if create_submission_file:
-        print 'Reading in test data...'
+        print('Reading in test data...')
         test_data, X_test = process_test_data(data_dir + test_file, features, impute)
 
-        print 'Predicting test data...'
+        print('Predicting test data...')
         y_est = predict(X_test, model, scaler, pca)
 
-        print 'Creating submission file...'
+        print('Creating submission file...')
         create_submission(test_data, y_est, data_dir + submit_file)
 
-    print 'Process complete.'
+    print('Process complete.')
 
 
 if __name__ == "__main__":
