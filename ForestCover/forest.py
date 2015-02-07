@@ -293,19 +293,23 @@ def parameter_search(X, y, algorithm, scaler, pca, metric):
     X = apply_transforms(X, scaler, pca)
     param_grid = None
 
-    if algorithm == 'bayes':
-        param_grid = None
-    elif algorithm == 'logistic':
-        param_grid = None
+    if algorithm == 'logistic':
+        param_grid = [{'penalty': ['l1', 'l2'], 'C': [0.1, 0.3, 1.0, 3.0]}]
     elif algorithm == 'svm':
         param_grid = [{'C': [1, 10, 100, 1000], 'kernel': ['linear']},
                       {'C': [1, 10, 100, 1000], 'gamma': [0.001, 0.0001], 'kernel': ['rbf']}]
     elif algorithm == 'sgd':
-        param_grid = None
+        param_grid = [{'loss': ['hinge', 'log', 'modified_huber'], 'penalty': ['l1', 'l2'],
+                       'alpha': [0.0001, 0.001, 0.01], 'iter': [100, 1000, 10000]}]
     elif algorithm == 'forest':
-        param_grid = None
+        param_grid = [{'n_estimators': [10, 30, 100, 300], 'criterion': ['gini', 'entropy'],
+                       'max_features': ['auto', 'log2', None], 'max_depth': [3, 5, 7, None],
+                       'min_samples_split': [2, 10, 30, 100], 'min_samples_leaf': [1, 3, 10, 30, 100]}]
     elif algorithm == 'boost':
-        param_grid = None
+        param_grid = [{'learning_rate': [0.1, 0.3, 1.0], 'subsample': [1.0, 0.9, 0.7, 0.5],
+                       'n_estimators': [100, 300, 1000], 'max_features': ['auto', 'log2', None],
+                       'max_depth': [3, 5, 7, None], 'min_samples_split': [2, 10, 30, 100],
+                       'min_samples_leaf': [1, 3, 10, 30, 100]}]
 
     grid_estimator = GridSearchCV(model, param_grid, scoring=metric, cv=3, n_jobs=-1, verbose=1)
     grid_estimator.fit(X, y)
