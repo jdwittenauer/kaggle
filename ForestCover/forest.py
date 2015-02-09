@@ -14,8 +14,9 @@ import matplotlib.pyplot as plt
 import seaborn as sb
 from sklearn import *
 from sklearn.ensemble import *
-from sklearn.learning_curve import *
 from sklearn.grid_search import *
+from sklearn.feature_selection import *
+from sklearn.learning_curve import *
 
 
 def load(filename):
@@ -37,25 +38,48 @@ def save(model, filename):
     model_file.close()
 
 
-def process_training_data(filename, features, impute):
+def generate_features(data):
+    """
+    Generates new derived features to add to the data set for model training.
+    """
+    data['Aspect_Shifted'] = data['Aspect'].map(lambda x: x - 180 if x + 180 < 360 else x + 180)
+    data['High_Water'] = data['Vertical_Distance_To_Hydrology'] < 0
+    data['EVDtH'] = data['Elevation'] - data['Vertical_Distance_To_Hydrology']
+    data['EHDtH'] = data['Elevation'] - data['Horizontal_Distance_To_Hydrology'] * 0.2
+    data['DTH'] = (data['Horizontal_Distance_To_Hydrology'] ** 2 + data['Vertical_Distance_To_Hydrology'] ** 2) ** 0.5
+    data['Hydro_Fire_1'] = data['Horizontal_Distance_To_Hydrology'] + data['Horizontal_Distance_To_Fire_Points']
+    data['Hydro_Fire_2'] = abs(data['Horizontal_Distance_To_Hydrology'] - data['Horizontal_Distance_To_Fire_Points'])
+    data['Hydro_Road_1'] = abs(data['Horizontal_Distance_To_Hydrology'] + data['Horizontal_Distance_To_Roadways'])
+    data['Hydro_Road_2'] = abs(data['Horizontal_Distance_To_Hydrology'] - data['Horizontal_Distance_To_Roadways'])
+    data['Fire_Road_1'] = abs(data['Horizontal_Distance_To_Fire_Points'] + data['Horizontal_Distance_To_Roadways'])
+    data['Fire_Road_2'] = abs(data['Horizontal_Distance_To_Fire_Points'] - data['Horizontal_Distance_To_Roadways'])
+
+    return data
+
+
+def process_training_data(filename, create_features):
     """
     Reads in training data and prepares numpy arrays.
     """
     training_data = pd.read_csv(filename, sep=',')
+    num_features = len(training_data.columns) - 1
 
-    # impute missing values
-    if impute == 'mean':
-        training_data.fillna(training_data.mean())
-    elif impute == 'zeros':
-        training_data.fillna(0)
+    # move the label to the first position and drop the ID column
+    cols = training_data.columns.tolist()
+    cols = cols[-1:] + cols[1:num_features]
+    training_data = training_data[cols]
 
-    X = training_data.iloc[:, 1:features].values
-    y = training_data.iloc[:, features+1].values
+    if create_features:
+        training_data = generate_features(training_data)
+
+    num_features = len(training_data.columns)
+    X = training_data.iloc[:, 1:num_features].values
+    y = training_data.iloc[:, 0].values
 
     return training_data, X, y
 
 
-def create_transforms(X, standardize, whiten):
+def create_transforms(X, standardize, whiten, select):
     """
     Creates transform objects to apply before training or scoring.
     """
@@ -71,10 +95,16 @@ def create_transforms(X, standardize, whiten):
         pca = decomposition.PCA(whiten=True)
         pca.fit(X)
 
-    return scaler, pca
+    # create a feature selection transform
+    selector = None
+    if select:
+        selector = VarianceThreshold(threshold=0.0)
+        selector.fit(X)
+
+    return scaler, pca, selector
 
 
-def apply_transforms(X, scaler, pca):
+def apply_transforms(X, scaler, pca, selector):
     """
     Applies pre-computed transformations to a data set.
     """
@@ -84,10 +114,13 @@ def apply_transforms(X, scaler, pca):
     if pca is not None:
         X = pca.transform(X)
 
+    if selector is not None:
+        X = selector.transform(X)
+
     return X
 
 
-def visualize(training_data, X, y, scaler, pca, features):
+def visualize(training_data, X, y, pca):
     """
     Computes statistics describing the data and creates some visualizations
     that attempt to highlight the underlying structure.
@@ -97,25 +130,23 @@ def visualize(training_data, X, y, scaler, pca, features):
     """
 
     print('Generating individual feature histograms...')
-    num_histograms = features / 16 if features % 16 == 0 else features / 16 + 1
-    for i in range(num_histograms):
+    num_features = len(training_data.columns)
+    num_plots = num_features / 16 if num_features % 16 == 0 else num_features / 16 + 1
+    for i in range(num_plots):
         fig, ax = plt.subplots(4, 4, figsize=(20, 10))
         for j in range(16):
             index = (i * 16) + j
-            if index < (features - 1):
-                ax[j / 4, j % 4].hist(X[:, index], bins=30)
-                ax[j / 4, j % 4].set_title(training_data.columns[index + 1])
-                ax[j / 4, j % 4].set_xlim((min(X[:, index]), max(X[:, index])))
-            elif index < features:
+            if index == 0:
                 ax[j / 4, j % 4].hist(y, bins=30)
-                ax[j / 4, j % 4].set_title(training_data.columns[index + 1])
+                ax[j / 4, j % 4].set_title(training_data.columns[index])
                 ax[j / 4, j % 4].set_xlim((min(y), max(y)))
+            elif index < num_features:
+                ax[j / 4, j % 4].hist(X[:, index - 1], bins=30)
+                ax[j / 4, j % 4].set_title(training_data.columns[index])
+                ax[j / 4, j % 4].set_xlim((min(X[:, index - 1]), max(X[:, index - 1])))
         fig.tight_layout()
 
     print('Generating correlation matrix...')
-    if scaler is not None:
-        X = scaler.transform(X)
-
     fig2, ax2 = plt.subplots(figsize=(16, 10))
     colormap = sb.blend_palette(["#00008B", "#6A5ACD", "#F0F8FF", "#FFE6F8", "#C71585", "#8B0000"], as_cmap=True)
     sb.corrplot(training_data, annot=False, sig_stars=False, diag_names=False, cmap=colormap, ax=ax2)
@@ -127,17 +158,17 @@ def visualize(training_data, X, y, scaler, pca, features):
         class_count = np.count_nonzero(np.unique(y))
         colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
 
-        fig3, ax3 = plt.subplots(figsize=(16, 10), projection='3d')
+        fig3, ax3 = plt.subplots(figsize=(16, 10))
         for i in range(class_count):
-            class_idx = i + 1  # add 1 if class index start at 1 instead of 0
-            ax3.scatter(X[y == class_idx, 0], X[y == class_idx, 1], X[y == class_idx, 2],  c=colors[i], label=class_idx)
+            class_idx = i + 1  # add 1 if class labels start at 1 instead of 0
+            ax3.scatter(X[y == class_idx, 0], X[y == class_idx, 1], c=colors[i], label=class_idx)
         ax3.set_title('First & Second Principal Components')
         ax3.legend()
         fig3.tight_layout()
 
         fig4, ax4 = plt.subplots(figsize=(16, 10))
         for i in range(class_count):
-            class_idx = i + 1  # add 1 if class index start at 1 instead of 0
+            class_idx = i + 1  # add 1 if class labels start at 1 instead of 0
             ax4.scatter(X[y == class_idx, 1], X[y == class_idx, 2], c=colors[i], label=class_idx)
         ax4.set_title('Second & Third Principal Components')
         ax4.legend()
@@ -145,7 +176,7 @@ def visualize(training_data, X, y, scaler, pca, features):
 
         fig5, ax5 = plt.subplots(figsize=(16, 10))
         for i in range(class_count):
-            class_idx = i + 1  # add 1 if class index start at 1 instead of 0
+            class_idx = i + 1  # add 1 if class labels start at 1 instead of 0
             ax5.scatter(X[y == class_idx, 2], X[y == class_idx, 3], c=colors[i], label=class_idx)
         ax5.set_title('Third & Fourth Principal Components')
         ax5.legend()
@@ -181,13 +212,13 @@ def define_model(algorithm):
     return model
 
 
-def train(training_data, X, y, algorithm, scaler, pca):
+def train(training_data, X, y, algorithm, scaler, pca, selector):
     """
     Trains a new model using the training data.
     """
     t0 = time.time()
     model = define_model(algorithm)
-    X = apply_transforms(X, scaler, pca)
+    X = apply_transforms(X, scaler, pca, selector)
     model.fit(X, y)
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
@@ -212,41 +243,41 @@ def train(training_data, X, y, algorithm, scaler, pca):
     return model
 
 
-def predict(X, model, scaler, pca):
+def predict(X, model, scaler, pca, selector):
     """
     Predicts the class label.
     """
-    X = apply_transforms(X, scaler, pca)
+    X = apply_transforms(X, scaler, pca, selector)
     y_est = model.predict(X)
 
     return y_est
 
 
-def predict_probability(X, model, scaler, pca):
+def predict_probability(X, model, scaler, pca, selector):
     """
     Predicts the class probabilities.
     """
-    X = apply_transforms(X, scaler, pca)
+    X = apply_transforms(X, scaler, pca, selector)
     y_prob = model.predict_proba(X)[:, 1]
 
     return y_prob
 
 
-def score(X, y, model, scaler, pca):
+def score(X, y, model, scaler, pca, selector):
     """
     Create weighted signal and background sets and calculate the AMS.
     """
-    X = apply_transforms(X, scaler, pca)
+    X = apply_transforms(X, scaler, pca, selector)
 
     return model.score(X, y)
 
 
-def cross_validate(X, y, algorithm, scaler, pca, metric):
+def cross_validate(X, y, algorithm, scaler, pca, selector, metric):
     """
     Performs cross-validation to estimate the true performance of the model.
     """
     model = define_model(algorithm)
-    X = apply_transforms(X, scaler, pca)
+    X = apply_transforms(X, scaler, pca, selector)
 
     t0 = time.time()
     scores = cross_validation.cross_val_score(model, X, y, scoring=metric, cv=3, n_jobs=-1, verbose=1)
@@ -256,14 +287,14 @@ def cross_validate(X, y, algorithm, scaler, pca, metric):
     return np.mean(scores)
 
 
-def plot_learning_curve(X, y, algorithm, scaler, pca, metric):
+def plot_learning_curve(X, y, algorithm, scaler, pca, selector, metric):
     """
     Plots a learning curve showing model performance against both training and
     validation data sets as a function of the number of training samples.
     """
 
     model = define_model(algorithm)
-    X = apply_transforms(X, scaler, pca)
+    X = apply_transforms(X, scaler, pca, selector)
 
     train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric, cv=3, n_jobs=-1, verbose=1)
     train_scores_mean = np.mean(train_scores, axis=1)
@@ -276,21 +307,21 @@ def plot_learning_curve(X, y, algorithm, scaler, pca, metric):
     ax.set_xlabel('Training Examples')
     ax.set_ylabel('Score')
     ax.fill_between(train_sizes, train_scores_mean - train_scores_std, train_scores_mean + train_scores_std,
-                    alpha=0.1, color="r")
+                    alpha=0.1, color='r')
     ax.fill_between(train_sizes, test_scores_mean - test_scores_std, test_scores_mean + test_scores_std,
-                    alpha=0.1, color="g")
-    ax.plot(train_sizes, train_scores_mean, 'o-', color="r", label="Training score")
-    ax.plot(train_sizes, test_scores_mean, 'o-', color="g", label="Cross-validation score")
+                    alpha=0.1, color='r')
+    ax.plot(train_sizes, train_scores_mean, 'o-', color='r', label='Training score')
+    ax.plot(train_sizes, test_scores_mean, 'o-', color='r', label='Cross-validation score')
     ax.legend(loc='best')
     fig.tight_layout()
 
 
-def parameter_search(X, y, algorithm, scaler, pca, metric):
+def parameter_search(X, y, algorithm, scaler, pca, selector, metric):
     """
     Performs an exhaustive search over the specified model parameters.
     """
     model = define_model(algorithm)
-    X = apply_transforms(X, scaler, pca)
+    X = apply_transforms(X, scaler, pca, selector)
     param_grid = None
 
     if algorithm == 'logistic':
@@ -317,19 +348,34 @@ def parameter_search(X, y, algorithm, scaler, pca, metric):
     return grid_estimator.best_estimator_, grid_estimator.best_params_, grid_estimator.best_score_
 
 
-def process_test_data(filename, features, impute):
+def train_ensemble(X, y, algorithm, scaler, pca, selector):
+    """
+    Creates an ensemble of many models together.
+    """
+    model = define_model(algorithm)
+    X = apply_transforms(X, scaler, pca, selector)
+
+    t0 = time.time()
+    ensemble_model = BaggingClassifier(base_estimator=model, n_estimators=10, max_samples=1.0, max_features=1.0,
+                                       bootstrap=True, bootstrap_features=False, verbose=1)
+    ensemble_model.fit(X, y)
+    t1 = time.time()
+    print('Ensemble training completed in {0:3f} s.'.format(t1 - t0))
+
+    return ensemble_model
+
+
+def process_test_data(filename, create_features):
     """
     Reads in the test data set and prepares it for prediction by the model.
     """
     test_data = pd.read_csv(filename, sep=',')
 
-    # impute missing values
-    if impute == 'mean':
-        test_data.fillna(test_data.mean())
-    elif impute == 'zeros':
-        test_data.fillna(0)
+    if create_features:
+        test_data = generate_features(test_data)
 
-    X_test = test_data.iloc[:, 1:features].values
+    num_features = len(test_data.columns)
+    X_test = test_data.iloc[:, 1:num_features].values
 
     return test_data, X_test
 
@@ -344,74 +390,56 @@ def create_submission(test_data, y_est, submit_file):
     submit.to_csv(submit_file, sep=',', index=False, index_label=False)
 
 
-def plot_roc_curve():
-    """
-    Plots a receiver operating characteristic (ROC) curve for the given classifier.
-    """
-    return None
-
-
-def generate_features():
-    """
-    Generates new derived features to add to the data set for model training.
-    """
-    return None
-
-
-def select_features():
-    """
-    Selects a subset of the total number of features available.
-    """
-    return None
-
-
-def ensemble():
-    """
-    Creates an ensemble of many models together.
-    """
-    return None
-
-
 def main():
-    # perform some initialization
     load_training_data = True
-    create_visualizations = True
+    create_features = False
+    create_visualizations = False
     load_model = False
-    train_model = False
+    train_model = True
     create_learning_curve = False
     perform_grid_search = False
+    perform_ensemble = False
     save_model = False
     create_submission_file = False
+
     code_dir = 'C:\\Users\\John\\PycharmProjects\\Kaggle\\ForestCover\\'
     data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\ForestCover\\'
     training_file = 'train.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
-    features = 54
+
     algorithm = 'logistic'  # bayes, logistic, svm, sgd, forest, boost
-    impute = 'none'  # zeros, mean, none
     metric = None  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score
+    select = False
     standardize = False
     whiten = False
+
+    training_data = None
+    X = None
+    y = None
+    scaler = None
+    pca = None
+    selector = None
+    model = None
 
     os.chdir(code_dir)
 
     print('Starting process...')
-    print('Algorithm={0}, Impute={1} Standardize={2}, Whiten={3}'.format(algorithm, impute, standardize, whiten))
-    training_data, X, y, scaler, pca, model = None
+    print('Algorithm={0}, Create={1}, Select={2}, Standardize={3}, Whiten={4}'.format(
+        algorithm, create_features, select, standardize, whiten))
 
     if load_training_data:
         print('Reading in training data...')
-        training_data, X, y = process_training_data(data_dir + training_file, features, impute)
+        training_data, X, y = process_training_data(data_dir + training_file, create_features)
 
-    if standardize or whiten:
+    if standardize or whiten or select:
         print('Creating data transforms...')
-        scaler, pca = create_transforms(X, standardize, whiten)
+        scaler, pca, selector = create_transforms(X, standardize, whiten, select)
 
     if create_visualizations:
         print('Creating visualizations...')
-        visualize(training_data, X, y, scaler, pca, features)
+        visualize(training_data, X, y, pca)
 
     if load_model:
         print('Loading model from disk...')
@@ -419,26 +447,34 @@ def main():
 
     if train_model:
         print('Training model on full data set...')
-        model = train(training_data, X, y, algorithm, scaler, pca)
+        model = train(training_data, X, y, algorithm, scaler, pca, selector)
 
         print('Calculating training score...')
-        model_score = score(X, y, model, scaler, pca)
+        model_score = score(X, y, model, scaler, pca, selector)
         print('Training score ='), model_score
 
         if create_learning_curve:
             print('Generating learning curve...')
-            plot_learning_curve(X, y, algorithm, scaler, pca, metric)
+            plot_learning_curve(X, y, algorithm, scaler, pca, selector, metric)
         else:
             print('Performing cross-validation...')
-            cross_val_score = cross_validate(X, y, algorithm, scaler, pca, metric)
+            cross_val_score = cross_validate(X, y, algorithm, scaler, pca, selector, metric)
             print('Cross-validation score ='), cross_val_score
 
     if perform_grid_search:
         print('Performing hyper-parameter grid search...')
-        best_model, best_params, best_score = parameter_search(X, y, algorithm, scaler, pca, metric)
+        best_model, best_params, best_score = parameter_search(X, y, algorithm, scaler, pca, selector, metric)
         print('Best model = ', best_model)
         print('Best params = ', best_params)
         print('Best score = ', best_score)
+
+    if perform_ensemble:
+        print('Creating an ensemble of models...')
+        ensemble_model = train_ensemble(X, y, algorithm, scaler, pca, selector)
+
+        print('Calculating ensemble training score...')
+        ensemble_model_score = score(X, y, ensemble_model, scaler, pca, selector)
+        print('Ensemble Training score ='), ensemble_model_score
 
     if save_model:
         print('Saving model to disk...')
@@ -446,10 +482,10 @@ def main():
 
     if create_submission_file:
         print('Reading in test data...')
-        test_data, X_test = process_test_data(data_dir + test_file, features, impute)
+        test_data, X_test = process_test_data(data_dir + test_file, create_features)
 
         print('Predicting test data...')
-        y_est = predict(X_test, model, scaler, pca)
+        y_est = predict(X_test, model, scaler, pca, selector)
 
         print('Creating submission file...')
         create_submission(test_data, y_est, data_dir + submit_file)
