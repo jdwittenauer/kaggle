@@ -280,7 +280,7 @@ def cross_validate(X, y, algorithm, scaler, pca, selector, metric):
     X = apply_transforms(X, scaler, pca, selector)
 
     t0 = time.time()
-    scores = cross_validation.cross_val_score(model, X, y, scoring=metric, cv=3, n_jobs=-1, verbose=1)
+    scores = cross_validation.cross_val_score(model, X, y, scoring=metric, cv=3, n_jobs=-1)
     t1 = time.time()
     print('Cross-validation completed in {0:3f} s.'.format(t1 - t0))
 
@@ -296,7 +296,8 @@ def plot_learning_curve(X, y, algorithm, scaler, pca, selector, metric):
     model = define_model(algorithm)
     X = apply_transforms(X, scaler, pca, selector)
 
-    train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric, cv=3, n_jobs=-1, verbose=1)
+    t0 = time.time()
+    train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric, cv=3, n_jobs=-1)
     train_scores_mean = np.mean(train_scores, axis=1)
     train_scores_std = np.std(train_scores, axis=1)
     test_scores_mean = np.mean(test_scores, axis=1)
@@ -314,6 +315,8 @@ def plot_learning_curve(X, y, algorithm, scaler, pca, selector, metric):
     ax.plot(train_sizes, test_scores_mean, 'o-', color='r', label='Cross-validation score')
     ax.legend(loc='best')
     fig.tight_layout()
+    t1 = time.time()
+    print('Learning curve generated in {0:3f} s.'.format(t1 - t0))
 
 
 def parameter_search(X, y, algorithm, scaler, pca, selector, metric):
@@ -322,8 +325,8 @@ def parameter_search(X, y, algorithm, scaler, pca, selector, metric):
     """
     model = define_model(algorithm)
     X = apply_transforms(X, scaler, pca, selector)
-    param_grid = None
 
+    param_grid = None
     if algorithm == 'logistic':
         param_grid = [{'penalty': ['l1', 'l2'], 'C': [0.1, 0.3, 1.0, 3.0]}]
     elif algorithm == 'svm':
@@ -342,8 +345,11 @@ def parameter_search(X, y, algorithm, scaler, pca, selector, metric):
                        'max_depth': [3, 5, 7, None], 'min_samples_split': [2, 10, 30, 100],
                        'min_samples_leaf': [1, 3, 10, 30, 100]}]
 
-    grid_estimator = GridSearchCV(model, param_grid, scoring=metric, cv=3, n_jobs=-1, verbose=1)
+    t0 = time.time()
+    grid_estimator = GridSearchCV(model, param_grid, scoring=metric, cv=3, n_jobs=-1)
     grid_estimator.fit(X, y)
+    t1 = time.time()
+    print('Grid search completed in {0:3f} s.'.format(t1 - t0))
 
     return grid_estimator.best_estimator_, grid_estimator.best_params_, grid_estimator.best_score_
 
@@ -357,7 +363,7 @@ def train_ensemble(X, y, algorithm, scaler, pca, selector):
 
     t0 = time.time()
     ensemble_model = BaggingClassifier(base_estimator=model, n_estimators=10, max_samples=1.0, max_features=1.0,
-                                       bootstrap=True, bootstrap_features=False, verbose=1)
+                                       bootstrap=True, bootstrap_features=False)
     ensemble_model.fit(X, y)
     t1 = time.time()
     print('Ensemble training completed in {0:3f} s.'.format(t1 - t0))
@@ -392,12 +398,12 @@ def create_submission(test_data, y_est, submit_file):
 
 def main():
     load_training_data = True
-    create_features = False
+    create_features = True
     create_visualizations = False
     load_model = False
     train_model = True
     create_learning_curve = False
-    perform_grid_search = False
+    perform_grid_search = True
     perform_ensemble = False
     save_model = False
     create_submission_file = False
@@ -409,10 +415,10 @@ def main():
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
 
-    algorithm = 'logistic'  # bayes, logistic, svm, sgd, forest, boost
+    algorithm = 'forest'  # bayes, logistic, svm, sgd, forest, boost
     metric = None  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score
-    select = False
-    standardize = False
+    select = True
+    standardize = True
     whiten = False
 
     training_data = None
@@ -422,6 +428,7 @@ def main():
     pca = None
     selector = None
     model = None
+    ensemble_model = None
 
     os.chdir(code_dir)
 
@@ -485,7 +492,10 @@ def main():
         test_data, X_test = process_test_data(data_dir + test_file, create_features)
 
         print('Predicting test data...')
-        y_est = predict(X_test, model, scaler, pca, selector)
+        if perform_ensemble:
+            y_est = predict(X_test, ensemble_model, scaler, pca, selector)
+        else:
+            y_est = predict(X_test, model, scaler, pca, selector)
 
         print('Creating submission file...')
         create_submission(test_data, y_est, data_dir + submit_file)
