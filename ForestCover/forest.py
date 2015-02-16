@@ -19,6 +19,17 @@ from sklearn.feature_selection import *
 from sklearn.learning_curve import *
 
 
+def performance_test():
+    """
+    Test NumPy performance.  Should run in less than a second on most machines.
+    """
+    A = np.random.random((2000, 2000))
+    B = np.random.random((2000, 2000))
+    t = time.time()
+    np.dot(A, B)
+    print(time.time()-t)
+
+
 def load(filename):
     """
     Load a previously training model from disk.
@@ -398,12 +409,12 @@ def create_submission(test_data, y_est, submit_file):
 
 def main():
     load_training_data = True
-    create_features = True
+    create_features = False
     create_visualizations = False
     load_model = False
     train_model = True
     create_learning_curve = False
-    perform_grid_search = True
+    perform_grid_search = False
     perform_ensemble = False
     save_model = False
     create_submission_file = False
@@ -417,9 +428,9 @@ def main():
 
     algorithm = 'forest'  # bayes, logistic, svm, sgd, forest, boost
     metric = None  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score
-    select = True
-    standardize = True
+    standardize = False
     whiten = False
+    select = True
 
     training_data = None
     X = None
