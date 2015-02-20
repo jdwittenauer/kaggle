@@ -276,7 +276,7 @@ def predict_probability(X, model, scaler, pca, selector):
 
 def score(X, y, model, scaler, pca, selector):
     """
-    Create weighted signal and background sets and calculate the AMS.
+    Scores the model's performance and returns the result.
     """
     X = apply_transforms(X, scaler, pca, selector)
 
