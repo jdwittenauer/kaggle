@@ -303,7 +303,6 @@ def plot_learning_curve(X, y, algorithm, scaler, pca, selector, metric):
     Plots a learning curve showing model performance against both training and
     validation data sets as a function of the number of training samples.
     """
-
     model = define_model(algorithm)
     X = apply_transforms(X, scaler, pca, selector)
 
