@@ -12,11 +12,16 @@ import pickle
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sb
-from sklearn import *
+from sklearn.cross_validation import *
+from sklearn.decomposition import *
 from sklearn.ensemble import *
-from sklearn.grid_search import *
 from sklearn.feature_selection import *
+from sklearn.grid_search import *
 from sklearn.learning_curve import *
+from sklearn.linear_model import *
+from sklearn.naive_bayes import *
+from sklearn.preprocessing import *
+from sklearn.svm import *
 
 
 def performance_test(x):
@@ -81,18 +86,26 @@ def process_training_data(filename, ex_generate_features):
     return training_data, X, y1, y2
 
 
-def create_transforms(X, transform_list, transforms):
+def create_transforms(X, transform_list, transforms, missing='NaN', impute_strategy='mean', categories=None):
     """
     Creates transform objects to apply before training or scoring.
     """
     for k in transform_list:
-        if k == 'scaler':
+        if k == 'imputer':
+            # impute missing values
+            transforms[k] = Imputer(missing_values=missing, strategy=impute_strategy)
+            transforms[k].fit(X)
+        elif k == 'onehot':
+            # create a category encoder
+            transforms[k] = OneHotEncoder(categorical_features=categories, sparse=False)
+            transforms[k].fit(X)
+        elif k == 'scaler':
             # create a standardization transform
-            transforms[k] = preprocessing.StandardScaler()
+            transforms[k] = StandardScaler()
             transforms[k].fit(X)
         elif k == 'pca':
             # create a PCA transform
-            transforms[k] = decomposition.PCA(whiten=True)
+            transforms[k] = PCA(whiten=True)
             transforms[k].fit(X)
         elif k == 'selector':
             # create a feature selection transform
@@ -141,6 +154,13 @@ def visualize_sequential_relationships(training_data, X, y1, y2, viz_type, max_f
     print('TODO')
 
 
+def visualize_regression_residuals(training_data, X, y1, y2, viz_type, max_features):
+    """
+    Generates line plots to visualize residuals from a regression function.
+    """
+    print('TODO')
+
+
 def visualize_principal_components(training_data, X, y1, y2, viz_type, max_features):
     """
     Generates scatter plots to visualize the principal components of the data set.
@@ -156,13 +176,13 @@ def define_model(model_type, algorithm):
 
     if model_type == 'classification':
         if algorithm == 'bayes':
-            model = naive_bayes.GaussianNB()
+            model = GaussianNB()
         elif algorithm == 'logistic':
-            model = linear_model.LogisticRegression(penalty='l2', C=1.0)
+            model = LogisticRegression(penalty='l2', C=1.0)
         elif algorithm == 'svm':
-            model = svm.SVC(C=1.0, kernel='rbf', shrinking=True, probability=False, cache_size=200)
+            model = SVC(C=1.0, kernel='rbf', shrinking=True, probability=False, cache_size=200)
         elif algorithm == 'sgd':
-            model = linear_model.SGDClassifier(loss='hinge', penalty='l2', alpha=0.0001,
+            model = SGDClassifier(loss='hinge', penalty='l2', alpha=0.0001,
                                                n_iter=1000, shuffle=False, n_jobs=-1)
         elif algorithm == 'forest':
             model = RandomForestClassifier(n_estimators=10, criterion='gini', max_features='auto', max_depth=None,
@@ -175,7 +195,23 @@ def define_model(model_type, algorithm):
             print('No model defined for ' + algorithm)
             exit()
     else:
-        print('TODO')
+        if algorithm == 'ridge':
+            model = Ridge(alpha=1.0)
+        elif algorithm == 'svm':
+            model = SVR(C=1.0, kernel='rbf', shrinking=True, probability=False, cache_size=200)
+        elif algorithm == 'sgd':
+            model = SGDRegressor(loss='squared_loss', penalty='l2', alpha=0.0001,
+                                              n_iter=1000, shuffle=False)
+        elif algorithm == 'forest':
+            model = RandomForestRegressor(n_estimators=10, criterion='mse', max_features='auto', max_depth=None,
+                                          min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
+        elif algorithm == 'boost':
+            model = GradientBoostingRegressor(loss='ls', learning_rate=0.1, n_estimators=100, subsample=1.0,
+                                              min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
+                                              max_leaf_nodes=None)
+        else:
+            print('No model defined for ' + algorithm)
+            exit()
 
     return model
 
@@ -253,7 +289,7 @@ def cross_validate(X, y, model_type, algorithm, metric, transforms):
     X = apply_transforms(X, transforms)
 
     t0 = time.time()
-    scores = cross_validation.cross_val_score(model, X, y, scoring=metric, cv=3, n_jobs=-1)
+    scores = cross_val_score(model, X, y, scoring=metric, cv=3, n_jobs=-1)
     t1 = time.time()
     print('Cross-validation completed in {0:3f} s.'.format(t1 - t0))
 
@@ -301,6 +337,8 @@ def parameter_search(X, y, model_type, algorithm, metric, transforms):
     param_grid = None
     if algorithm == 'logistic':
         param_grid = [{'penalty': ['l1', 'l2'], 'C': [0.1, 0.3, 1.0, 3.0]}]
+    elif algorithm == 'ridge':
+        param_grid = [{'alpha': [0.1, 0.3, 1.0, 3.0, 10.0]}]
     elif algorithm == 'svm':
         param_grid = [{'C': [1, 10, 100, 1000], 'kernel': ['linear']},
                       {'C': [1, 10, 100, 1000], 'gamma': [0.001, 0.0001], 'kernel': ['rbf']}]
@@ -369,7 +407,7 @@ def create_submission(test_data, y_est, submit_file):
 
 
 def main():
-    ex_process_training_data = True
+    ex_process_training_data = False
     ex_generate_features = False
     ex_create_transforms = False
     ex_load_model = False
@@ -378,7 +416,15 @@ def main():
     ex_visualize_correlations = False
     ex_visualize_pairwise_relationships = False
     ex_visualize_sequential_relationships = False
+    ex_visualize_regression_residuals = False
     ex_visualize_principal_components = False
+    ex_train_model = False
+    ex_visualize_feature_importance = False
+    ex_cross_validate = False
+    ex_plot_learning_curve = False
+    ex_parameter_search = False
+    ex_train_ensemble = False
+    ex_create_submission = False
 
     code_dir = 'C:\\Users\\John\\PycharmProjects\\Kaggle\\BikeSharing\\'
     data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\BikeSharing\\'
@@ -387,7 +433,7 @@ def main():
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
 
-    algorithm = 'bayes'  # bayes, logistic, svm, sgd, forest, boost
+    algorithm = 'bayes'  # bayes, logistic, ridge, svm, sgd, forest, boost
     metric = None  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score
     transform_list = ['scaler', 'pca', 'selector']
     transforms = {'scaler': None, 'pca': None, 'selector': None}
@@ -401,6 +447,10 @@ def main():
     os.chdir(code_dir)
 
     print('Starting process...')
+    print('Algorithm = {0}'.format(algorithm))
+    print('Scoring Metric = {0}'.format(metric))
+    print('Generate Features = {0}'.format(ex_generate_features))
+    print('Transforms = {0}'.format(transform_list))
 
     if ex_process_training_data:
         print('Reading in training data...')
@@ -433,9 +483,16 @@ def main():
         print('Visualizing feature distributions...')
         visualize_sequential_relationships(training_data, X, y1, y2, None, None)
 
+    if ex_visualize_regression_residuals:
+        print('Visualizing feature distributions...')
+        visualize_regression_residuals(training_data, X, y1, y2, None, None)
+
     if ex_visualize_principal_components:
         print('Visualizing feature distributions...')
         visualize_principal_components(training_data, X, y1, y2, None, None)
+
+    if ex_train_model:
+        print('Training model on full data set...')
 
     print('Process complete.')
 
