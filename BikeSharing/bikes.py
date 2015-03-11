@@ -35,6 +35,26 @@ def performance_test(x):
     print(time.time() - t)
 
 
+def load_csv_data(directory, filename, dtype=None, index=None, coerce_index=False):
+    """
+    Test NumPy performance.  Use to compare computation speed across machines.
+    """
+    data = pd.read_csv(directory + filename, sep=',', dtype=dtype)
+
+    if index is not None and coerce_index:
+        if type(index) is str:
+            data[index] = data[index].convert_objects(convert_dates='coerce')
+        else:
+            for key in index:
+                data[key] = data[key].convert_objects(convert_dates='coerce')
+
+        data = data.set_index(index)
+
+    print('Data file ' + filename + ' loaded successfully.')
+
+    return data
+
+
 def load_model(filename):
     """
     Load a previously training model from disk.
@@ -42,6 +62,7 @@ def load_model(filename):
     model_file = open(filename, 'rb')
     model = pickle.load(model_file)
     model_file.close()
+
     return model
 
 
@@ -54,6 +75,35 @@ def save_model(model, filename):
     model_file.close()
 
 
+def predict(X, model, transforms):
+    """
+    Predicts the class label.
+    """
+    X = apply_transforms(X, transforms)
+    y_est = model.predict(X)
+
+    return y_est
+
+
+def predict_probability(X, model, transforms):
+    """
+    Predicts the class probabilities.
+    """
+    X = apply_transforms(X, transforms)
+    y_prob = model.predict_proba(X)[:, 1]
+
+    return y_prob
+
+
+def score(X, y, model, transforms):
+    """
+    Scores the model's performance and returns the result.
+    """
+    X = apply_transforms(X, transforms)
+
+    return model.score(X, y)
+
+
 def generate_features(data):
     """
     Generates new derived features to add to the data set for model training.
@@ -63,11 +113,11 @@ def generate_features(data):
     return data
 
 
-def process_training_data(filename, ex_generate_features):
+def process_training_data(directory, filename, ex_generate_features):
     """
     Reads in training data and prepares numpy arrays.
     """
-    training_data = pd.read_csv(filename, sep=',')
+    training_data = load_csv_data(directory, filename)
     num_features = len(training_data.columns) - 3
 
     # drop the total count label and move the registered/casual counts to the front
@@ -182,8 +232,7 @@ def define_model(model_type, algorithm):
         elif algorithm == 'svm':
             model = SVC(C=1.0, kernel='rbf', shrinking=True, probability=False, cache_size=200)
         elif algorithm == 'sgd':
-            model = SGDClassifier(loss='hinge', penalty='l2', alpha=0.0001,
-                                               n_iter=1000, shuffle=False, n_jobs=-1)
+            model = SGDClassifier(loss='hinge', penalty='l2', alpha=0.0001, n_iter=1000, shuffle=False, n_jobs=-1)
         elif algorithm == 'forest':
             model = RandomForestClassifier(n_estimators=10, criterion='gini', max_features='auto', max_depth=None,
                                            min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
@@ -200,8 +249,7 @@ def define_model(model_type, algorithm):
         elif algorithm == 'svm':
             model = SVR(C=1.0, kernel='rbf', shrinking=True, probability=False, cache_size=200)
         elif algorithm == 'sgd':
-            model = SGDRegressor(loss='squared_loss', penalty='l2', alpha=0.0001,
-                                              n_iter=1000, shuffle=False)
+            model = SGDRegressor(loss='squared_loss', penalty='l2', alpha=0.0001, n_iter=1000, shuffle=False)
         elif algorithm == 'forest':
             model = RandomForestRegressor(n_estimators=10, criterion='mse', max_features='auto', max_depth=None,
                                           min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
@@ -216,7 +264,7 @@ def define_model(model_type, algorithm):
     return model
 
 
-def train_model(X, y, transforms, model_type, algorithm):
+def train_model(X, y, model_type, algorithm, transforms):
     """
     Trains a new model using the training data.
     """
@@ -230,12 +278,10 @@ def train_model(X, y, transforms, model_type, algorithm):
     return model
 
 
-def visualize_feature_importance(training_data, model, offset):
+def visualize_feature_importance(training_data, model, column_offset):
     """
     Generates a feature importance plot.  Requires a trained random forest or gradient boosting model.
     """
-    print('Generating feature importance plot...')
-
     importance = model.feature_importances_
     importance = 100.0 * (importance / importance.max())
     importance = importance[0:30]
@@ -246,39 +292,10 @@ def visualize_feature_importance(training_data, model, offset):
     ax.set_title('Variable Importance')
     ax.barh(pos, importance[sorted_idx], align='center')
     ax.set_yticks(pos)
-    ax.set_yticklabels(training_data.columns[sorted_idx + offset])
+    ax.set_yticklabels(training_data.columns[sorted_idx + column_offset])
     ax.set_xlabel('Relative Importance')
 
     fig.tight_layout()
-
-
-def predict(X, model, transforms):
-    """
-    Predicts the class label.
-    """
-    X = apply_transforms(X, transforms)
-    y_est = model.predict(X)
-
-    return y_est
-
-
-def predict_probability(X, model, transforms):
-    """
-    Predicts the class probabilities.
-    """
-    X = apply_transforms(X, transforms)
-    y_prob = model.predict_proba(X)[:, 1]
-
-    return y_prob
-
-
-def score(X, y, model, transforms):
-    """
-    Scores the model's performance and returns the result.
-    """
-    X = apply_transforms(X, transforms)
-
-    return model.score(X, y)
 
 
 def cross_validate(X, y, model_type, algorithm, metric, transforms):
@@ -381,11 +398,11 @@ def train_ensemble(X, y, model_type, algorithm, transforms):
     return ensemble_model
 
 
-def process_test_data(filename, ex_generate_features):
+def process_test_data(directory, filename, ex_generate_features):
     """
     Reads in the test data set and prepares it for prediction by the model.
     """
-    test_data = pd.read_csv(filename, sep=',')
+    test_data = load_csv_data(directory, filename)
 
     if ex_generate_features:
         test_data = generate_features(test_data)
@@ -396,14 +413,14 @@ def process_test_data(filename, ex_generate_features):
     return test_data, X_test
 
 
-def create_submission(test_data, y_est, submit_file):
+def create_submission(test_data, y_est, data_dir, submit_file):
     """
     Create a new submission file with test data and predictions generated by the model.
     """
     submit = pd.DataFrame(columns=['datetime', 'count'])
     submit['datetime'] = test_data['datetime']
     submit['count'] = y_est
-    submit.to_csv(submit_file, sep=',', index=False, index_label=False)
+    submit.to_csv(data_dir + submit_file, sep=',', index=False, index_label=False)
 
 
 def main():
@@ -433,10 +450,12 @@ def main():
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
 
+    model_type = 'classification'  # classification, regression
     algorithm = 'bayes'  # bayes, logistic, ridge, svm, sgd, forest, boost
     metric = None  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score
     transform_list = ['scaler', 'pca', 'selector']
     transforms = {'scaler': None, 'pca': None, 'selector': None}
+    column_offset = 3
 
     training_data = None
     X = None
@@ -454,18 +473,10 @@ def main():
 
     if ex_process_training_data:
         print('Reading in training data...')
-        training_data, X, y1, y2 = process_training_data(data_dir + training_file, ex_generate_features)
+        training_data, X, y1, y2 = process_training_data(data_dir, training_file, ex_generate_features)
 
     if ex_create_transforms:
         transforms = create_transforms(X, transform_list, transforms)
-
-    if ex_load_model:
-        print('Loading model from disk...')
-        model = load_model(data_dir + model_file)
-
-    if ex_save_model:
-        print('Saving model to disk...')
-        save_model(model, data_dir + model_file)
 
     if ex_visualize_feature_distributions:
         print('Visualizing feature distributions...')
@@ -491,8 +502,59 @@ def main():
         print('Visualizing feature distributions...')
         visualize_principal_components(training_data, X, y1, y2, None, None)
 
+    if ex_load_model:
+        print('Loading model from disk...')
+        model = load_model(data_dir + model_file)
+
     if ex_train_model:
         print('Training model on full data set...')
+        model = train_model(X, y1, model_type, algorithm, transforms)
+
+        print('Calculating training score...')
+        model_score = score(X, y1, model, transforms)
+        print('Training score ='), model_score
+
+        if ex_visualize_feature_importance and (algorithm == 'forest' or algorithm == 'boost'):
+            print('Generating feature importance plot...')
+            visualize_feature_importance(training_data, model, column_offset)
+
+        if ex_cross_validate:
+            print('Performing cross-validation...')
+            cross_validation_score = cross_validate(X, y1, model_type, algorithm, metric, transforms)
+            print('Cross-validation score ='), cross_validation_score
+
+        if ex_plot_learning_curve:
+            print('Generating learning curve...')
+            plot_learning_curve(X, y1, model_type, algorithm, metric, transforms)
+
+    if ex_parameter_search:
+        print('Performing hyper-parameter grid search...')
+        best_model, best_params, best_score = parameter_search(X, y1, model_type, algorithm, metric, transforms)
+        print('Best model = ', best_model)
+        print('Best params = ', best_params)
+        print('Best score = ', best_score)
+
+    if ex_train_ensemble:
+        print('Creating an ensemble of models...')
+        model = train_ensemble(X, y1, model_type, algorithm, transforms)
+
+        print('Calculating ensemble training score...')
+        ensemble_score = score(X, y1, model, transforms)
+        print('Ensemble Training score ='), ensemble_score
+
+    if ex_save_model:
+        print('Saving model to disk...')
+        save_model(model, data_dir + model_file)
+
+    if ex_create_submission:
+        print('Reading in test data...')
+        test_data, X_test = process_test_data(data_dir, test_file, ex_generate_features)
+
+        print('Predicting test data...')
+        y_est = predict(X_test, model, transforms)
+
+        print('Creating submission file...')
+        create_submission(test_data, y_est, data_dir, submit_file)
 
     print('Process complete.')
 
