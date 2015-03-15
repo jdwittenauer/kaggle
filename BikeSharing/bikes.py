@@ -35,18 +35,19 @@ def performance_test(x):
     print(time.time() - t)
 
 
-def load_csv_data(directory, filename, dtype=None, index=None, coerce_index=False):
+def load_csv_data(directory, filename, dtype=None, index=None, convert_to_date=False):
     """
     Test NumPy performance.  Use to compare computation speed across machines.
     """
     data = pd.read_csv(directory + filename, sep=',', dtype=dtype)
 
-    if index is not None and coerce_index:
-        if type(index) is str:
-            data[index] = data[index].convert_objects(convert_dates='coerce')
-        else:
-            for key in index:
-                data[key] = data[key].convert_objects(convert_dates='coerce')
+    if index is not None:
+        if convert_to_date:
+            if type(index) is str:
+                data[index] = data[index].convert_objects(convert_dates='coerce')
+            else:
+                for key in index:
+                    data[key] = data[key].convert_objects(convert_dates='coerce')
 
         data = data.set_index(index)
 
@@ -117,21 +118,21 @@ def process_training_data(directory, filename, ex_generate_features):
     """
     Reads in training data and prepares numpy arrays.
     """
-    training_data = load_csv_data(directory, filename)
+    training_data = load_csv_data(directory, filename, index='datetime', convert_to_date=True)
     num_features = len(training_data.columns) - 3
 
     # drop the total count label and move the registered/casual counts to the front
     cols = training_data.columns.tolist()
-    cols = cols[:1] + cols[-3:-1] + cols[1:num_features]
+    cols = cols[-3:-1] + cols[0:num_features]
     training_data = training_data[cols]
 
     if ex_generate_features:
         training_data = generate_features(training_data)
 
     num_features = len(training_data.columns)
-    X = training_data.iloc[:, 3:num_features].values
-    y1 = training_data.iloc[:, 1].values
-    y2 = training_data.iloc[:, 2].values
+    X = training_data.iloc[:, 2:num_features].values
+    y1 = training_data.iloc[:, 0].values
+    y2 = training_data.iloc[:, 1].values
 
     return training_data, X, y1, y2
 
@@ -176,18 +177,42 @@ def apply_transforms(X, transforms):
     return X
 
 
-def visualize_feature_distributions(training_data, X, y1, y2, viz_type, max_features):
+def visualize_feature_distributions(training_data, viz_type, max_features):
     """
     Generates feature distribution plots (histogram or kde) for each feature.
     """
-    print('TODO')
+    if viz_type == 'hist':
+        hist = True
+        kde = False
+    else:
+        hist = False
+        kde = True
+
+    num_features = max_features if max_features < len(training_data.columns) else len(training_data.columns)
+    num_plots = num_features / 16 if num_features % 16 == 0 else num_features / 16 + 1
+
+    for i in range(num_plots):
+        fig, ax = plt.subplots(4, 4, figsize=(20, 10))
+        for j in range(16):
+            index = (i * 16) + j
+            if index < num_features:
+                if index != 3:  # this column is all 0s in the bike set
+                    sb.distplot(training_data.iloc[:, index], hist=hist, kde=kde, label=training_data.columns[index],
+                                ax=ax[j / 4, j % 4], kde_kws={"shade": True})
+        fig.tight_layout()
 
 
-def visualize_correlations(training_data, X, y1, y2, viz_type, max_features):
+def visualize_correlations(training_data):
     """
     Generates a correlation matrix heat map.
     """
-    print('TODO')
+    fig, ax = plt.subplots(figsize=(16, 10))
+    colormap = sb.blend_palette(sb.color_palette('coolwarm'), as_cmap=True)
+    if len(training_data.columns) < 30:
+        sb.corrplot(training_data, annot=True, sig_stars=False, diag_names=True, cmap=colormap, ax=ax)
+    else:
+        sb.corrplot(training_data, annot=False, sig_stars=False, diag_names=False, cmap=colormap, ax=ax)
+    fig.tight_layout()
 
 
 def visualize_pairwise_relationships(training_data, X, y1, y2, viz_type, max_features):
@@ -453,9 +478,10 @@ def main():
     model_type = 'classification'  # classification, regression
     algorithm = 'bayes'  # bayes, logistic, ridge, svm, sgd, forest, boost
     metric = None  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score
-    transform_list = ['scaler', 'pca', 'selector']
-    transforms = {'scaler': None, 'pca': None, 'selector': None}
-    column_offset = 3
+    transform_list = ['imputer', 'onehot', 'scaler', 'pca', 'selector']
+    transforms = {'imputer': None, 'onehot': None, 'scaler': None, 'pca': None, 'selector': None}
+    column_offset = 2
+    max_features = 16
 
     training_data = None
     X = None
@@ -480,26 +506,26 @@ def main():
 
     if ex_visualize_feature_distributions:
         print('Visualizing feature distributions...')
-        visualize_feature_distributions(training_data, X, y1, y2, None, None)
+        visualize_feature_distributions(training_data, 'hist', max_features)
 
     if ex_visualize_correlations:
-        print('Visualizing feature distributions...')
-        visualize_correlations(training_data, X, y1, y2, None, None)
+        print('Visualizing feature correlations...')
+        visualize_correlations(training_data)
 
     if ex_visualize_pairwise_relationships:
-        print('Visualizing feature distributions...')
+        print('Visualizing pairwise relationships...')
         visualize_pairwise_relationships(training_data, X, y1, y2, None, None)
 
     if ex_visualize_sequential_relationships:
-        print('Visualizing feature distributions...')
+        print('Visualizing sequential relationships...')
         visualize_sequential_relationships(training_data, X, y1, y2, None, None)
 
     if ex_visualize_regression_residuals:
-        print('Visualizing feature distributions...')
+        print('Visualizing regression residuals...')
         visualize_regression_residuals(training_data, X, y1, y2, None, None)
 
     if ex_visualize_principal_components:
-        print('Visualizing feature distributions...')
+        print('Visualizing principal components...')
         visualize_principal_components(training_data, X, y1, y2, None, None)
 
     if ex_load_model:
