@@ -137,31 +137,33 @@ def process_training_data(directory, filename, ex_generate_features):
     return training_data, X, y1, y2
 
 
-def create_transforms(X, transform_list, transforms, missing='NaN', impute_strategy='mean', categories=None):
+def create_transforms(X, transforms, missing='NaN', impute_strategy='mean', categories=None):
     """
     Creates transform objects to apply before training or scoring.
     """
-    for k in transform_list:
-        if k == 'imputer':
+    for i, (key, transform) in enumerate(transforms):
+        if key == 'imputer':
             # impute missing values
-            transforms[k] = Imputer(missing_values=missing, strategy=impute_strategy)
-            transforms[k].fit(X)
-        elif k == 'onehot':
+            transform = Imputer(missing_values=missing, strategy=impute_strategy)
+            X = transform.fit_transform(X)
+        elif key == 'onehot':
             # create a category encoder
-            transforms[k] = OneHotEncoder(categorical_features=categories, sparse=False)
-            transforms[k].fit(X)
-        elif k == 'scaler':
-            # create a standardization transform
-            transforms[k] = StandardScaler()
-            transforms[k].fit(X)
-        elif k == 'pca':
-            # create a PCA transform
-            transforms[k] = PCA(whiten=True)
-            transforms[k].fit(X)
-        elif k == 'selector':
+            transform = OneHotEncoder(categorical_features=categories, sparse=False)
+            X = transform.fit_transform(X)
+        elif key == 'selector':
             # create a feature selection transform
-            transforms[k] = VarianceThreshold(threshold=0.0)
-            transforms[k].fit(X)
+            transform = VarianceThreshold(threshold=0.0)
+            X = transform.fit_transform(X)
+        elif key == 'scaler':
+            # create a standardization transform
+            transform = StandardScaler()
+            X = transform.fit_transform(X)
+        elif key == 'pca':
+            # create a PCA transform
+            transform = PCA(whiten=True)
+            transform.fit(X)
+
+        transforms[i] = (key, transform)
 
     return transforms
 
@@ -170,9 +172,9 @@ def apply_transforms(X, transforms):
     """
     Applies pre-computed transformations to a data set.
     """
-    for k in transforms:
-        if transforms[k] is not None:
-            X = transforms[k].transform(X)
+    for key, transform in transforms:
+        if transform is not None:
+            X = transform.transform(X)
 
     return X
 
@@ -217,7 +219,7 @@ def visualize_correlations(training_data):
 
 def visualize_pairwise_relationships(training_data, X, y1, y2, viz_type, max_features):
     """
-    Generates a faucet plot showing pairwise relationships between factors.
+    Generates a plot showing pairwise relationships between factors.
     """
     print('TODO')
 
@@ -236,11 +238,31 @@ def visualize_regression_residuals(training_data, X, y1, y2, viz_type, max_featu
     print('TODO')
 
 
-def visualize_principal_components(training_data, X, y1, y2, viz_type, max_features):
+def visualize_principal_components(X, y1, y2, model_type, num_components, transforms):
     """
     Generates scatter plots to visualize the principal components of the data set.
     """
-    print('TODO')
+    X = apply_transforms(X, transforms)
+    for y in (y1, y2):
+        if model_type == 'classification':
+            class_count = np.count_nonzero(np.unique(y))
+            colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
+
+            for i in range(num_components):
+                fig, ax = plt.subplots(figsize=(16, 10))
+                for j in range(class_count):
+                    ax.scatter(X[y == j, i], X[y == j, i + 1], s=30, c=colors[j], label=j)
+                ax.set_title('Principal Components ' + str(i) + ' and ' + str(i + 1))
+                ax.legend()
+                fig.tight_layout()
+        else:
+            for i in range(num_components):
+                fig, ax = plt.subplots(figsize=(16, 10))
+                sc = ax.scatter(X[:, i], X[:, i + 1], s=30, c=y, cmap='Blues')
+                ax.set_title('Principal Components ' + str(i) + ' and ' + str(i + 1))
+                ax.legend()
+                fig.colorbar(sc)
+                fig.tight_layout()
 
 
 def define_model(model_type, algorithm):
@@ -475,13 +497,14 @@ def main():
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
 
-    model_type = 'classification'  # classification, regression
-    algorithm = 'bayes'  # bayes, logistic, ridge, svm, sgd, forest, boost
+    model_type = 'regression'  # classification, regression
+    algorithm = 'ridge'  # bayes, logistic, ridge, svm, sgd, forest, boost
     metric = None  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score
-    transform_list = ['imputer', 'onehot', 'scaler', 'pca', 'selector']
-    transforms = {'imputer': None, 'onehot': None, 'scaler': None, 'pca': None, 'selector': None}
+    transforms = [('imputer', None), ('onehot', None), ('selector', None), ('scaler', None), ('pca', None)]
+    categories = [0, 1, 2, 3]
     column_offset = 2
     max_features = 16
+    num_components = 3
 
     training_data = None
     X = None
@@ -495,14 +518,14 @@ def main():
     print('Algorithm = {0}'.format(algorithm))
     print('Scoring Metric = {0}'.format(metric))
     print('Generate Features = {0}'.format(ex_generate_features))
-    print('Transforms = {0}'.format(transform_list))
+    print('Transforms = {0}'.format(transforms))
 
     if ex_process_training_data:
         print('Reading in training data...')
         training_data, X, y1, y2 = process_training_data(data_dir, training_file, ex_generate_features)
 
     if ex_create_transforms:
-        transforms = create_transforms(X, transform_list, transforms)
+        transforms = create_transforms(X, transforms, categories=categories)
 
     if ex_visualize_feature_distributions:
         print('Visualizing feature distributions...')
@@ -526,7 +549,7 @@ def main():
 
     if ex_visualize_principal_components:
         print('Visualizing principal components...')
-        visualize_principal_components(training_data, X, y1, y2, None, None)
+        visualize_principal_components(X, y1, y2, model_type, num_components, transforms)
 
     if ex_load_model:
         print('Loading model from disk...')
