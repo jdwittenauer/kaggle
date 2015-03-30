@@ -179,6 +179,16 @@ def apply_transforms(X, transforms):
     return X
 
 
+def visualize_variable_relationships(training_data, viz_type, variables):
+    """
+    Generates plots showing the relationship between two or more variables.
+    """
+    if len(variables) == 2:
+        sb.jointplot(variables[0], variables[1], training_data, kind=viz_type, size=16)
+    else:
+        print('TODO')
+
+
 def visualize_feature_distributions(training_data, viz_type, max_features):
     """
     Generates feature distribution plots (histogram or kde) for each feature.
@@ -217,25 +227,32 @@ def visualize_correlations(training_data):
     fig.tight_layout()
 
 
-def visualize_pairwise_relationships(training_data, X, y1, y2, viz_type, max_features):
+def visualize_sequential_relationships(training_data, max_features, smooth=None, window=1):
     """
-    Generates a plot showing pairwise relationships between factors.
+    Generates line plots to visualize sequential data.  Assumes the data frame index is time series.
     """
-    print('TODO')
+    training_data.index.name = None
+    num_features = max_features if max_features < len(training_data.columns) else len(training_data.columns)
+    num_plots = num_features / 16 if num_features % 16 == 0 else num_features / 16 + 1
 
+    for i in range(num_plots):
+        fig, ax = plt.subplots(4, 4, sharex=True, figsize=(20, 10))
+        for j in range(16):
+            index = (i * 16) + j
+            if index < num_features:
+                if index != 3:  # this column is all 0s in the bike set
+                    if smooth == 'mean':
+                        training_data.iloc[:, index] = pd.rolling_mean(training_data.iloc[:, index], window)
+                    elif smooth == 'var':
+                        training_data.iloc[:, index] = pd.rolling_var(training_data.iloc[:, index], window)
+                    elif smooth == 'skew':
+                        training_data.iloc[:, index] = pd.rolling_skew(training_data.iloc[:, index], window)
+                    elif smooth == 'kurt':
+                        training_data.iloc[:, index] = pd.rolling_kurt(training_data.iloc[:, index], window)
 
-def visualize_sequential_relationships(training_data, X, y1, y2, viz_type, max_features):
-    """
-    Generates line plots to visualize sequential data.
-    """
-    print('TODO')
-
-
-def visualize_regression_residuals(training_data, X, y1, y2, viz_type, max_features):
-    """
-    Generates line plots to visualize residuals from a regression function.
-    """
-    print('TODO')
+                    training_data.iloc[:, index].plot(ax=ax[j / 4, j % 4], kind='line', legend=False,
+                                                      title=training_data.columns[index])
+        fig.tight_layout()
 
 
 def visualize_principal_components(X, y1, y2, model_type, num_components, transforms):
@@ -476,11 +493,10 @@ def main():
     ex_create_transforms = False
     ex_load_model = False
     ex_save_model = False
+    ex_visualize_variable_relationships = False
     ex_visualize_feature_distributions = False
     ex_visualize_correlations = False
-    ex_visualize_pairwise_relationships = False
     ex_visualize_sequential_relationships = False
-    ex_visualize_regression_residuals = False
     ex_visualize_principal_components = False
     ex_train_model = False
     ex_visualize_feature_importance = False
@@ -527,25 +543,23 @@ def main():
     if ex_create_transforms:
         transforms = create_transforms(X, transforms, categories=categories)
 
+    if ex_visualize_variable_relationships:
+        print('Visualizing pairwise relationships...')
+        # scatter, reg, resid, kde, hex
+        visualize_variable_relationships(training_data, 'scatter', ['season', 'casual'])
+
     if ex_visualize_feature_distributions:
         print('Visualizing feature distributions...')
+        # hist, kde
         visualize_feature_distributions(training_data, 'hist', max_features)
 
     if ex_visualize_correlations:
         print('Visualizing feature correlations...')
         visualize_correlations(training_data)
 
-    if ex_visualize_pairwise_relationships:
-        print('Visualizing pairwise relationships...')
-        visualize_pairwise_relationships(training_data, X, y1, y2, None, None)
-
     if ex_visualize_sequential_relationships:
         print('Visualizing sequential relationships...')
-        visualize_sequential_relationships(training_data, X, y1, y2, None, None)
-
-    if ex_visualize_regression_residuals:
-        print('Visualizing regression residuals...')
-        visualize_regression_residuals(training_data, X, y1, y2, None, None)
+        visualize_sequential_relationships(training_data, max_features)
 
     if ex_visualize_principal_components:
         print('Visualizing principal components...')
