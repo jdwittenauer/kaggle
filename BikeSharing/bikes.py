@@ -179,14 +179,49 @@ def apply_transforms(X, transforms):
     return X
 
 
-def visualize_variable_relationships(training_data, viz_type, variables):
+def visualize_variable_relationships(training_data, viz_type, category_vars, quantitative_vars):
     """
-    Generates plots showing the relationship between two or more variables.
+    Generates plots showing the relationship between several variables.
     """
-    if len(variables) == 2:
-        sb.jointplot(variables[0], variables[1], training_data, kind=viz_type, size=16)
+    # compare the continuous variable distributions using a violin plot
+    sub_data = training_data[quantitative_vars]
+    fig, ax = plt.subplots(1, 1, figsize=(16, 12))
+    sb.violinplot(sub_data, ax=ax)
+    fig.tight_layout()
+
+    # if categorical variables were provided, visualize the quantitative distributions by category
+    if len(category_vars) > 0:
+        fig, ax = plt.subplots(len(quantitative_vars), len(category_vars), figsize=(16, 12))
+        for i, var in enumerate(quantitative_vars):
+            for j, cat in enumerate(category_vars):
+                sb.violinplot(training_data[var], training_data[cat], ax=ax[i, j])
+        fig.tight_layout()
+
+    # generate plots to directly compare the variables
+    if len(category_vars) == 0:
+        if len(quantitative_vars) == 2:
+            sb.jointplot(quantitative_vars[0], quantitative_vars[1], training_data, kind=viz_type, size=16)
+        else:
+            sb.pairplot(training_data, vars=quantitative_vars, kind='scatter',
+                        diag_kind='kde', size=16 / len(quantitative_vars))
     else:
-        print('TODO')
+        if len(quantitative_vars) == 1:
+            if len(category_vars) == 1:
+                sb.factorplot(category_vars[0], quantitative_vars[0], None,
+                              training_data, kind='auto', size=16)
+            else:
+                sb.factorplot(category_vars[0], quantitative_vars[0], category_vars[1],
+                              training_data, kind='auto', size=16)
+        if len(quantitative_vars) == 2:
+            if len(category_vars) == 1:
+                sb.lmplot(quantitative_vars[0], quantitative_vars[1], training_data,
+                          col=None, row=category_vars[0], size=16)
+            else:
+                sb.lmplot(quantitative_vars[0], quantitative_vars[1], training_data,
+                          col=category_vars[0], row=category_vars[1], size=16)
+        else:
+            sb.pairplot(training_data, hue=category_vars[0], vars=quantitative_vars, kind='scatter',
+                        diag_kind='kde', size=16 / len(quantitative_vars))
 
 
 def visualize_feature_distributions(training_data, viz_type, max_features):
@@ -546,7 +581,7 @@ def main():
     if ex_visualize_variable_relationships:
         print('Visualizing pairwise relationships...')
         # scatter, reg, resid, kde, hex
-        visualize_variable_relationships(training_data, 'scatter', ['season', 'casual'])
+        visualize_variable_relationships(training_data, 'scatter', ['season', 'weather'], ['casual', 'registered'])
 
     if ex_visualize_feature_distributions:
         print('Visualizing feature distributions...')
