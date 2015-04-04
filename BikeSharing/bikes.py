@@ -19,6 +19,7 @@ from sklearn.feature_selection import *
 from sklearn.grid_search import *
 from sklearn.learning_curve import *
 from sklearn.linear_model import *
+from sklearn.manifold import *
 from sklearn.naive_bayes import *
 from sklearn.preprocessing import *
 from sklearn.svm import *
@@ -161,6 +162,22 @@ def create_transforms(X, transforms, missing='NaN', impute_strategy='mean', cate
         elif key == 'pca':
             # create a PCA transform
             transform = PCA(whiten=True)
+            transform.fit(X)
+        elif key == 'isomap':
+            # create an isomap transform
+            transform = Isomap()
+            transform.fit(X)
+        elif key == 'lle':
+            # create a modified LLE transform
+            transform = LocallyLinearEmbedding(method='modified')
+            transform.fit(X)
+        elif key == 'mds':
+            # create a multi-dimensional scaling transform
+            transform = MDS()
+            transform.fit(X)
+        elif key == 'tsne':
+            # create a t-SNE transform
+            transform = TSNE()
             transform.fit(X)
 
         transforms[i] = (key, transform)
