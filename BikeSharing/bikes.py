@@ -175,7 +175,7 @@ def create_transforms(X, transforms, missing='NaN', impute_strategy='mean', cate
             # create a multi-dimensional scaling transform
             transform = MDS()
             transform.fit(X)
-        elif key == 'tsne':
+        elif key == 't-sne':
             # create a t-SNE transform
             transform = TSNE()
             transform.fit(X)
@@ -241,7 +241,7 @@ def visualize_variable_relationships(training_data, viz_type, category_vars, qua
                         diag_kind='kde', size=16 / len(quantitative_vars))
 
 
-def visualize_feature_distributions(training_data, viz_type, max_features):
+def visualize_feature_distributions(training_data, viz_type, plot_size):
     """
     Generates feature distribution plots (histogram or kde) for each feature.
     """
@@ -252,7 +252,7 @@ def visualize_feature_distributions(training_data, viz_type, max_features):
         hist = False
         kde = True
 
-    num_features = max_features if max_features < len(training_data.columns) else len(training_data.columns)
+    num_features = plot_size if plot_size < len(training_data.columns) else len(training_data.columns)
     num_plots = num_features / 16 if num_features % 16 == 0 else num_features / 16 + 1
 
     for i in range(num_plots):
@@ -279,12 +279,12 @@ def visualize_correlations(training_data):
     fig.tight_layout()
 
 
-def visualize_sequential_relationships(training_data, max_features, smooth=None, window=1):
+def visualize_sequential_relationships(training_data, plot_size, smooth=None, window=1):
     """
     Generates line plots to visualize sequential data.  Assumes the data frame index is time series.
     """
     training_data.index.name = None
-    num_features = max_features if max_features < len(training_data.columns) else len(training_data.columns)
+    num_features = plot_size if plot_size < len(training_data.columns) else len(training_data.columns)
     num_plots = num_features / 16 if num_features % 16 == 0 else num_features / 16 + 1
 
     for i in range(num_plots):
@@ -400,7 +400,7 @@ def visualize_feature_importance(training_data, model, column_offset):
     """
     importance = model.feature_importances_
     importance = 100.0 * (importance / importance.max())
-    importance = importance[0:30]
+    importance = importance[0:30] if len(training_data.columns) > 30 else importance
     sorted_idx = np.argsort(importance)
     pos = np.arange(sorted_idx.shape[0])
 
@@ -414,7 +414,7 @@ def visualize_feature_importance(training_data, model, column_offset):
     fig.tight_layout()
 
 
-def cross_validate(X, y, model_type, algorithm, metric, transforms):
+def cross_validate(X, y, model_type, algorithm, metric, transforms, folds=3):
     """
     Performs cross-validation to estimate the true performance of the model.
     """
@@ -422,7 +422,41 @@ def cross_validate(X, y, model_type, algorithm, metric, transforms):
     X = apply_transforms(X, transforms)
 
     t0 = time.time()
-    scores = cross_val_score(model, X, y, scoring=metric, cv=3, n_jobs=-1)
+    scores = cross_val_score(model, X, y, scoring=metric, cv=folds, n_jobs=-1)
+    t1 = time.time()
+    print('Cross-validation completed in {0:3f} s.'.format(t1 - t0))
+
+    return np.mean(scores)
+
+
+def time_series_cross_validate(X, y, model_type, algorithm, transforms, folds=3,
+                               window_type='cumulative', forecast_range=10):
+    """
+    Performs time series cross-validation to estimate the true performance of the model.
+    """
+    model = define_model(model_type, algorithm)
+    X = apply_transforms(X, transforms)
+
+    scores = []
+    train_count = len(X)
+    fold_size = train_count / folds
+
+    t0 = time.time()
+    for i in range(folds):
+        if window_type == 'fixed':
+            fold_start = i * fold_size
+        else:
+            fold_start = 0
+
+        fold_end = ((i + 1) * fold_size) - 1
+        fold_train_end = fold_end - forecast_range
+
+        X_train, X_val = X[fold_start:fold_train_end, :], X[fold_train_end:fold_end, :]
+        y_train, y_val = y[fold_start:fold_train_end], y[fold_train_end:fold_end]
+
+        model.fit(X_train, y_train)
+        scores.append(model.score(X_val, y_val))
+
     t1 = time.time()
     print('Cross-validation completed in {0:3f} s.'.format(t1 - t0))
 
@@ -539,10 +573,16 @@ def create_submission(test_data, y_est, data_dir, submit_file):
     submit.to_csv(data_dir + submit_file, sep=',', index=False, index_label=False)
 
 
+def experiments():
+    """
+    Testing area for miscellaneous experiments.
+    """
+
+
 def main():
-    ex_process_training_data = False
-    ex_generate_features = False
-    ex_create_transforms = False
+    ex_process_training_data = True
+    ex_generate_features = True
+    ex_create_transforms = True
     ex_load_model = False
     ex_save_model = False
     ex_visualize_variable_relationships = False
@@ -550,13 +590,13 @@ def main():
     ex_visualize_correlations = False
     ex_visualize_sequential_relationships = False
     ex_visualize_principal_components = False
-    ex_train_model = False
-    ex_visualize_feature_importance = False
-    ex_cross_validate = False
+    ex_train_model = True
+    ex_visualize_feature_importance = True
+    ex_cross_validate = True
     ex_plot_learning_curve = False
     ex_parameter_search = False
     ex_train_ensemble = False
-    ex_create_submission = False
+    ex_create_submission = True
 
     code_dir = 'C:\\Users\\John\\PycharmProjects\\Kaggle\\BikeSharing\\'
     data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\BikeSharing\\'
@@ -566,12 +606,12 @@ def main():
     model_file = 'model.pkl'
 
     model_type = 'regression'  # classification, regression
-    algorithm = 'ridge'  # bayes, logistic, ridge, svm, sgd, forest, boost
+    algorithm = 'forest'  # bayes, logistic, ridge, svm, sgd, forest, boost
     metric = None  # accuracy, f1, rcc_auc, mean_absolute_error, mean_squared_error, r2_score
-    transforms = [('imputer', None), ('onehot', None), ('selector', None), ('scaler', None), ('pca', None)]
+    transforms = [('imputer', None), ('onehot', None), ('selector', None), ('scaler', None)]
     categories = [0, 1, 2, 3]
     column_offset = 2
-    max_features = 16
+    plot_size = 16
     num_components = 3
 
     training_data = None
@@ -579,6 +619,7 @@ def main():
     y1 = None
     y2 = None
     model = None
+    model2 = None
 
     os.chdir(code_dir)
 
@@ -603,7 +644,7 @@ def main():
     if ex_visualize_feature_distributions:
         print('Visualizing feature distributions...')
         # hist, kde
-        visualize_feature_distributions(training_data, 'hist', max_features)
+        visualize_feature_distributions(training_data, 'hist', plot_size)
 
     if ex_visualize_correlations:
         print('Visualizing feature correlations...')
@@ -611,7 +652,7 @@ def main():
 
     if ex_visualize_sequential_relationships:
         print('Visualizing sequential relationships...')
-        visualize_sequential_relationships(training_data, max_features)
+        visualize_sequential_relationships(training_data, plot_size)
 
     if ex_visualize_principal_components:
         print('Visualizing principal components...')
@@ -624,10 +665,13 @@ def main():
     if ex_train_model:
         print('Training model on full data set...')
         model = train_model(X, y1, model_type, algorithm, transforms)
+        model2 = train_model(X, y2, model_type, algorithm, transforms)
 
         print('Calculating training score...')
         model_score = score(X, y1, model, transforms)
-        print('Training score ='), model_score
+        print('Casual training score ='), model_score
+        model_score2 = score(X, y2, model2, transforms)
+        print('Registered training score ='), model_score2
 
         if ex_visualize_feature_importance and (algorithm == 'forest' or algorithm == 'boost'):
             print('Generating feature importance plot...')
@@ -635,8 +679,12 @@ def main():
 
         if ex_cross_validate:
             print('Performing cross-validation...')
-            cross_validation_score = cross_validate(X, y1, model_type, algorithm, metric, transforms)
-            print('Cross-validation score ='), cross_validation_score
+            cross_validation_score = time_series_cross_validate(X, y1, model_type, algorithm, transforms,
+                                                                forecast_range=258)
+            print('Casual cross-validation score ='), cross_validation_score
+            cross_validation_score2 = time_series_cross_validate(X, y2, model_type, algorithm, transforms,
+                                                                 forecast_range=258)
+            print('Registered cross-validation score ='), cross_validation_score2
 
         if ex_plot_learning_curve:
             print('Generating learning curve...')
@@ -666,7 +714,9 @@ def main():
         test_data, X_test = process_test_data(data_dir, test_file, ex_generate_features)
 
         print('Predicting test data...')
-        y_est = predict(X_test, model, transforms)
+        y_est_1 = predict(X_test, model, transforms)
+        y_est_2 = predict(X_test, model2, transforms)
+        y_est = y_est_1 + y_est_2
 
         print('Creating submission file...')
         create_submission(test_data, y_est, data_dir, submit_file)
