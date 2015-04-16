@@ -448,7 +448,7 @@ def cross_validate(X, y, model_type, algorithm, metric, transforms, folds=3):
 
 
 def time_series_cross_validate(X, y, model_type, algorithm, transforms, strategy='traditional', folds=3,
-                               window_type='cumulative', min_window=0, forecast_range=1):
+                               window_type='cumulative', min_window=0, forecast_range=1, plot=False):
     """
     Performs time series cross-validation to estimate the true performance of the model.
     """
@@ -479,6 +479,13 @@ def time_series_cross_validate(X, y, model_type, algorithm, transforms, strategy
 
         model.fit(X_train, y_train)
         scores.append(model.score(X_val, y_val))
+
+        if plot is True:
+            y_est = model.predict(X_val)
+            fig, ax = plt.subplots(figsize=(16, 10))
+            ax.set_title('Estimation Error')
+            ax.plot(y_est - y_val)
+            fig.tight_layout()
 
     t1 = time.time()
     print('Cross-validation completed in {0:3f} s.'.format(t1 - t0))
@@ -604,7 +611,7 @@ def main():
     ex_plot_learning_curve = False
     ex_parameter_search = False
     ex_train_ensemble = False
-    ex_create_submission = True
+    ex_create_submission = False
 
     code_dir = 'C:\\Users\\John\\PycharmProjects\\Kaggle\\BikeSharing\\'
     data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\BikeSharing\\'
@@ -689,10 +696,10 @@ def main():
         if ex_cross_validate:
             print('Performing cross-validation...')
             cross_validation_score = time_series_cross_validate(X, y1, model_type, algorithm, transforms,
-                                                                forecast_range=258)
+                                                                forecast_range=258, plot=True)
             print('Casual cross-validation score ='), cross_validation_score
             cross_validation_score2 = time_series_cross_validate(X, y2, model_type, algorithm, transforms,
-                                                                 forecast_range=258)
+                                                                 forecast_range=258, plot=True)
             print('Registered cross-validation score ='), cross_validation_score2
 
         if ex_plot_learning_curve:
