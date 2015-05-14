@@ -60,7 +60,7 @@ def score(X, y, algorithm, model, scaler):
     X = apply_scaler(X, scaler)
 
     if algorithm == 'xgb':
-        y_est = model.predict(X)
+        y_est = model.predict_proba(X)
         return log_loss(y, y_est)
     else:
         return model.score(X, y)
@@ -106,14 +106,9 @@ def define_model(algorithm, num_features, num_classes):
     if algorithm == 'logistic':
         model = LogisticRegression(penalty='l2', C=1.0)
     elif algorithm == 'xgb':
-        params = {'target': 'target',
-                  'max_iterations': 250,
-                  'max_depth': 10,
-                  'min_child_weight': 4,
-                  'row_subsample': .9,
-                  'min_loss_reduction': 1,
-                  'column_subsample': .8}
-        model = xgb.XGBClassifier(params)
+        model = xgb.XGBClassifier(max_depth=10, learning_rate=0.1, n_estimators=250, silent=True,
+                                  objective="multi:softprob", nthread=-1, gamma=0, min_child_weight=4,
+                                  max_delta_step=0, subsample=0.9, colsample_bytree=0.8, base_score=0.5, seed=0)
     elif algorithm == 'nn':
         model = Sequential()
         model.add(Dense(num_features, 512, init='glorot_uniform'))
@@ -154,8 +149,8 @@ def train_model(X, y, y_onehot, algorithm, model, scaler):
     return model
 
 
-def cross_validate(X, y, algorithm, scaler, folds=3):
-    model = define_model(algorithm)
+def cross_validate(X, y, algorithm, scaler, num_features, num_classes, folds=3):
+    model = define_model(algorithm, num_features, num_classes)
     X = apply_scaler(X, scaler)
     t0 = time.time()
 
@@ -164,7 +159,7 @@ def cross_validate(X, y, algorithm, scaler, folds=3):
         kf = KFold(y.shape[0], n_folds=3, shuffle=True)
         for train_index, test_index in kf:
             model = xgb.XGBClassifier().fit(X[train_index], y[train_index])
-            predictions = model.predict(X[test_index])
+            predictions = model.predict_proba(X[test_index])
             actuals = y[test_index]
             scores.append(log_loss(actuals, predictions))
     else:
@@ -193,8 +188,7 @@ def main():
     training_file = 'train.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'
-    model_file = 'keras.pkl'
-    algorithm = 'nn'
+    algorithm = 'xgb'
 
     os.chdir(code_dir)
     np.random.seed(1337)
@@ -223,11 +217,8 @@ def main():
         print('Training score = ' + str(score(X, y, algorithm, model, scaler)))
 
         print('Running cross-validation...')
-        val_score = cross_validate(X, y, algorithm, scaler)
+        val_score = cross_validate(X, y, algorithm, num_features, num_classes, scaler)
         print('Cross-validation score = ' + str(val_score))
-
-    print ('Saving model...')
-    save_model(model, data_dir + model_file)
 
     print('Generating submission file...')
     y_prob = predict_probability(X_test, model, scaler)
