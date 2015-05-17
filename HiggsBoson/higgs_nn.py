@@ -243,7 +243,7 @@ def main():
     create_nn_files = True
     train_nn_model = True
     create_submission_file = False
-    code_dir = '/home/john/git/kaggle/HiggsBosonChallenge'
+    code_dir = '/home/john/git/kaggle/HiggsBoson'
     data_dir = '/home/john/data/higgs'
     pretrain_file = '/combined.csv'
     training_file = '/training.csv'

@@ -2,11 +2,14 @@
 """
 @author: John Wittenauer
 
-@notes: This script was tested on 64-bit Ubuntu 14 using the Anaconda 2.0
+@notes: This script was tested on 64-bit Windows 7 using the Anaconda 2.0
 distribution of 64-bit Python 2.7.
 """
 
-import os, math, time, pickle, sys
+import os
+import math
+import time
+import pickle
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -17,9 +20,6 @@ from sklearn import linear_model
 from sklearn import naive_bayes
 from sklearn import preprocessing
 from sklearn import svm
-
-sys.path.append('/home/john/git/xgboost/wrapper')
-import xgboost as xgb
 
 
 def ams(s, b):
@@ -35,30 +35,23 @@ def ams(s, b):
         return math.sqrt(radicand)
 
 
-def load(alg, filename):
+def load(filename):
     """
     Load a previously training model from disk.
     """
-    if alg == 'xgboost':
-        model = xgb.Booster({'nthread': 16}, model_file=filename)
-    else:
-        model_file = open(filename, 'rb')
-        model = pickle.load(model_file)
-        model_file.close()
-        
+    model_file = open(filename, 'rb')
+    model = pickle.load(model_file)
+    model_file.close()
     return model
 
 
-def save(alg, model, filename):
+def save(model, filename):
     """
     Persist a trained model to disk.
     """
-    if alg == 'xgboost':
-        model.save_model(filename)
-    else:
-        model_file = open(filename, 'wb')
-        pickle.dump(model, model_file)
-        model_file.close()
+    model_file = open(filename, 'wb')
+    pickle.dump(model, model_file)
+    model_file.close()
 
 
 def process_training_data(filename, features, impute, standardize, whiten):
@@ -113,7 +106,7 @@ def visualize(training_data, X, y, scaler, pca, features):
         ax1[i % 4, i / 4].set_title(training_data.columns[i + 1])
         ax1[i % 4, i / 4].set_xlim((min(X[:, i]), max(X[:, i])))
     fig1.tight_layout()
-
+    
     fig2, ax2 = plt.subplots(4, 4, figsize=(20, 10))
     for i in range(16, features):
         ax2[i % 4, (i - 16) / 4].hist(X[:, i])
@@ -145,19 +138,15 @@ def visualize(training_data, X, y, scaler, pca, features):
         ax5.set_title('Second & Third Principal Components')
 
 
-def train(X, y, w, alg, scaler, pca):
+def train(X, y, alg, scaler, pca):
     """
     Trains a new model using the training data.
-    """
+    """     
     if scaler is not None:
         X = scaler.transform(X)
     
     if pca is not None:
-        X = pca.transform(X)    
-    
-    if alg == 'xgboost':
-        # use a separate process for the xgboost library
-        return train_xgb(X, y, w, scaler, pca)
+        X = pca.transform(X)
     
     t0 = time.time()
     
@@ -168,8 +157,8 @@ def train(X, y, w, alg, scaler, pca):
     elif alg == 'svm':
         model = svm.SVC()
     elif alg == 'boost':
-        model = ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=7,
-            min_samples_split=200, min_samples_leaf=200, max_features=30)
+        model = ensemble.GradientBoostingClassifier(n_estimators=100, max_depth=7, min_samples_split=200,
+                                                    min_samples_leaf=200, max_features=30)
     else:
         print 'No model defined for ' + alg
         exit()
@@ -182,38 +171,7 @@ def train(X, y, w, alg, scaler, pca):
     return model
 
 
-def train_xgb(X, y, w, scaler, pca):
-    """
-    Trains a boosted trees model using the XGBoost library.
-    """
-    t0 = time.time()
-    
-    xgmat = xgb.DMatrix(X, label=y, missing=-999.0, weight=w)
-    
-    w_pos = sum(w[i] for i in range(len(y)) if y[i] == 1)
-    w_neg = sum(w[i] for i in range(len(y)) if y[i] == 0)
-    
-    param = {}
-    param['objective'] = 'binary:logitraw'
-    param['scale_pos_weight'] = w_neg/w_pos
-    param['eta'] = 0.08
-    param['max_depth'] = 7
-    param['subsample'] = 0.8
-    param['eval_metric'] = 'auc'
-    param['silent'] = 1
-    
-    plst = list(param.items())
-    watchlist = []
-    
-    model = xgb.train(plst, xgmat, 128, watchlist)
-    
-    t1 = time.time()
-    print 'Model trained in {0:3f} s.'.format(t1 - t0)
-
-    return model
-
-
-def predict(X, model, alg, threshold, scaler, pca):
+def predict(X, model, threshold, scaler, pca):
     """
     Predicts the probability of a positive outcome and converts the
     probability to a binary prediction based on the cutoff percentage.
@@ -224,12 +182,7 @@ def predict(X, model, alg, threshold, scaler, pca):
     if pca is not None:
         X = pca.transform(X)
     
-    if alg == 'xgboost':
-        xgmat = xgb.DMatrix(X, missing=-999.0)
-        y_prob = model.predict(xgmat)
-    else:
-        y_prob = model.predict_proba(X)[:, 1]
-    
+    y_prob = model.predict_proba(X)[:, 1]
     cutoff = np.percentile(y_prob, threshold)
     y_est = y_prob > cutoff
 
@@ -269,10 +222,10 @@ def cross_validate(X, y, w, alg, scaler, pca, threshold):
         w_val[y_val == 0] *= (sum(w[y == 0]) / sum(w_val[y_val == 0]))
         
         # train the model
-        model = train(X_train, y_train, w_train, alg, scaler, pca)
+        model = train(X_train, y_train, alg, scaler, pca)
         
         # predict and score performance on the validation set
-        y_val_prob, y_val_est = predict(X_val, model, alg, threshold, scaler, pca)
+        y_val_prob, y_val_est = predict(X_val, model, threshold, scaler, pca)
         scores[i] = score(y_val, y_val_est, w_val)
         i += 1
     
@@ -327,7 +280,7 @@ def main():
     # perform some initialization
     features = 30
     threshold = 85
-    alg = 'xgboost'  # bayes, logistic, boost, xgboost
+    alg = 'boost'  # bayes, logistic, svm, boost
     impute = 'none'  # zeros, mean, none
     standardize = False
     whiten = False
@@ -337,8 +290,8 @@ def main():
     save_model = False
     create_visualizations = True
     create_submission_file = False
-    code_dir = '/home/john/git/kaggle/HiggsBosonChallenge/'
-    data_dir = '/home/john/data/higgs/'
+    code_dir = 'C:\\Users\\John\\Documents\\GitHub\\kaggle\\HiggsBoson\\'
+    data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\Higgs\\'
     training_file = 'training.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'
@@ -361,14 +314,14 @@ def main():
     
     if load_model:
         print 'Loading model from disk...'
-        model = load(alg, data_dir + model_file)
+        model = load(data_dir + model_file)
     
     if train_model:
         print 'Training model on full data set...'
-        model = train(X, y, w, alg, scaler, pca)
+        model = train(X, y, alg, scaler, pca)
         
         print 'Calculating predictions...'
-        y_prob, y_est = predict(X, model, alg, threshold, scaler, pca)
+        y_prob, y_est = predict(X, model, threshold, scaler, pca)
            
         print 'Calculating AMS...'
         ams_val = score(y, y_est, w)
@@ -380,14 +333,14 @@ def main():
     
     if save_model:
         print 'Saving model to disk...'
-        save(alg, model, data_dir + model_file)
+        save(model, data_dir + model_file)
     
     if create_submission_file:
         print 'Reading in test data...'
         test_data, X_test = process_test_data(data_dir + test_file, features, impute)
         
         print 'Predicting test data...'
-        y_test_prob, y_test_est = predict(X_test, model, alg, threshold, scaler, pca)
+        y_test_prob, y_test_est = predict(X_test, model, threshold, scaler, pca)
         
         print 'Creating submission file...'
         create_submission(test_data, y_test_prob, y_test_est, data_dir + submit_file)
