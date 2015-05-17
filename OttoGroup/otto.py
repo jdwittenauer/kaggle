@@ -84,27 +84,32 @@ def define_xgb_model():
     return model
 
 
-def define_nn_model(num_features, num_classes, layer_size):
+def define_nn_model(num_features, num_classes):
+    layer_size = 512
+    init_method = 'glorot_uniform'
+    loss_function = 'categorical_crossentropy'
+    optimization_method = 'adam'
+
     model = Sequential()
-    model.add(Dense(num_features, layer_size, init='glorot_uniform'))
+    model.add(Dense(num_features, layer_size, init=init_method))
     model.add(PReLU((layer_size,)))
     model.add(BatchNormalization((layer_size,)))
     model.add(Dropout(0.5))
 
-    model.add(Dense(layer_size, layer_size, init='glorot_uniform'))
+    model.add(Dense(layer_size, layer_size, init=init_method))
     model.add(PReLU((layer_size,)))
     model.add(BatchNormalization((layer_size,)))
     model.add(Dropout(0.5))
 
-    model.add(Dense(layer_size, layer_size, init='glorot_uniform'))
+    model.add(Dense(layer_size, layer_size, init=init_method))
     model.add(PReLU((layer_size,)))
     model.add(BatchNormalization((layer_size,)))
     model.add(Dropout(0.5))
 
-    model.add(Dense(layer_size, num_classes, init='glorot_uniform'))
+    model.add(Dense(layer_size, num_classes, init=init_method))
     model.add(Activation('softmax'))
 
-    model.compile(loss='categorical_crossentropy', optimizer='adam')
+    model.compile(loss=loss_function, optimizer=optimization_method)
 
     return model
 
@@ -122,7 +127,7 @@ def train_xgb_model(X, y, model, scaler):
 def train_nn_model(X, y_onehot, model, scaler):
     t0 = time.time()
     X = apply_scaler(X, scaler)
-    model.fit(X, y_onehot, nb_epoch=20, batch_size=16, validation_split=0.15)
+    model.fit(X, y_onehot, nb_epoch=20, batch_size=16, verbose=0)
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
 
@@ -138,6 +143,25 @@ def cross_validate_xgb(X, y, scaler, folds=3):
     kf = KFold(y.shape[0], n_folds=folds, shuffle=True)
     for train_index, test_index in kf:
         model.fit(X[train_index], y[train_index])
+        predictions = model.predict_proba(X[test_index])
+        actuals = y[test_index]
+        scores.append(log_loss(actuals, predictions))
+
+    t1 = time.time()
+    print('Cross-validation completed in {0:3f} s.'.format(t1 - t0))
+
+    return np.mean(scores)
+
+
+def cross_validate_nn(X, y, y_onehot, scaler, num_features, num_classes, folds=3):
+    model = define_nn_model(num_features, num_classes)
+    X = apply_scaler(X, scaler)
+    t0 = time.time()
+
+    scores = []
+    kf = KFold(y.shape[0], n_folds=folds, shuffle=True)
+    for train_index, test_index in kf:
+        model.fit(X[train_index], y_onehot[train_index], nb_epoch=20, batch_size=16, verbose=0)
         predictions = model.predict_proba(X[test_index])
         actuals = y[test_index]
         scores.append(log_loss(actuals, predictions))
@@ -196,7 +220,7 @@ def main():
     print('Cross-validation score = ' + str(val_score))
 
     print('Building ensemble...')
-    ensemble = BaggingClassifier(model, n_estimators=5, max_samples=1.0, max_features=0.9)
+    ensemble = BaggingClassifier(model, n_estimators=5, max_samples=1.0, max_features=1.0)
 
     print('Training ensemble...')
     X = apply_scaler(X, scaler)
