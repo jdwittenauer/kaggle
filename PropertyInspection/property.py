@@ -491,9 +491,9 @@ def define_xgb_model(model_type):
         # model = xgb.XGBRegressor(max_depth=3, learning_rate=0.1, n_estimators=100, silent=True,
         #                          objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
         #                          subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
-        model = xgb.XGBRegressor(max_depth=7, learning_rate=0.01, n_estimators=2000, silent=True,
+        model = xgb.XGBRegressor(max_depth=7, learning_rate=0.005, n_estimators=1500, silent=True,
                                  objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
-                                 subsample=0.8, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
+                                 subsample=0.9, colsample_bytree=0.9, base_score=0.5, seed=0, missing=None)
 
     return model
 
@@ -545,8 +545,8 @@ def train_model(X, y, model_type, algorithm, metric, transforms):
     """
     t0 = time.time()
     model = define_model(model_type, algorithm)
-    X = apply_transforms(X, transforms)
-    model.fit(X, y)
+    X_trans = apply_transforms(X, transforms)
+    model.fit(X_trans, y)
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
 
@@ -566,19 +566,19 @@ def train_xgb_model(X, y, model_type, metric, transforms, early_stopping):
     """
     t0 = time.time()
     model = define_xgb_model(model_type)
-    X = apply_transforms(X, transforms)
+    X_trans = apply_transforms(X, transforms)
 
     if early_stopping:
-        X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
+        X_train, X_eval, y_train, y_eval = train_test_split(X_trans, y, test_size=0.1)
         model.fit(X_train, y_train, eval_set=[(X_eval, y_eval)], eval_metric='rmse',
-                  early_stopping_rounds=10, verbose=False)
+                  early_stopping_rounds=100, verbose=False)
         print('Best iteration found: ' + str(model.best_iteration))
 
         print('Re-fitting at the new stopping point...')
         model.n_estimators = model.best_iteration
-        model.fit(X, y, verbose=False)
+        model.fit(X_trans, y, verbose=False)
     else:
-        model.fit(X, y, verbose=False)
+        model.fit(X_trans, y, verbose=False)
 
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
@@ -598,19 +598,18 @@ def train_nn_model(X, y, metric, transforms, early_stopping):
     Trains a new Keras model using the training data.
     """
     t0 = time.time()
-    X = apply_transforms(X, transforms)
+    X_trans = apply_transforms(X, transforms)
 
     print('Compiling...')
     model = define_nn_model(X.shape[1])
 
     print('Beginning training...')
-    history = None
     if early_stopping:
-        X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
+        X_train, X_eval, y_train, y_eval = train_test_split(X_trans, y, test_size=0.1)
         history = model.fit(X_train, y_train, batch_size=128, nb_epoch=100, verbose=0,
                             validation_data=(X_eval, y_eval), shuffle=True, callbacks=[])
     else:
-        history = model.fit(X, y, batch_size=128, nb_epoch=100, verbose=0, shuffle=True, callbacks=[])
+        history = model.fit(X_trans, y, batch_size=128, nb_epoch=100, verbose=0, shuffle=True, callbacks=[])
 
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
@@ -621,13 +620,21 @@ def train_nn_model(X, y, metric, transforms, early_stopping):
     print('Min eval loss ='), min(history.history['val_loss'])
     print('Min eval epoch ='), min(enumerate(history.history['loss']), key=lambda x: x[1])[0] + 1
 
-    print('Calculating training score...')
-    train_score = predict_score(X_train, y_train, model, metric, transforms)
-    print('Training score ='), train_score
+    if early_stopping:
+        print('Calculating training score...')
+        yhat_train = model.predict(X_train).ravel()
+        train_score = score(y_train, yhat_train, metric)
+        print('Training score ='), train_score
 
-    print('Calculating evaluation score...')
-    eval_score = predict_score(X_eval, y_eval, model, metric, transforms)
-    print('Evaluation score ='), eval_score
+        print('Calculating evaluation score...')
+        yhat_eval = model.predict(X_eval).ravel()
+        eval_score = score(y_eval, yhat_eval, metric)
+        print('Evaluation score ='), eval_score
+    else:
+        print('Calculating training score...')
+        yhat = model.predict(X_trans).ravel()
+        train_score = score(y, yhat, metric)
+        print('Training score ='), train_score
 
     return model
 
@@ -832,12 +839,12 @@ def xbg_parameter_search(X, y, transforms):
     X = apply_transforms(X, transforms)
     X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
 
-    for max_depth in [3, 5, 7, 9]:
-        for min_child_weight in [1, 3, 5, 7]:
-            for subsample in [0.9, 0.8, 0.7, 0.6, 0.5]:
-                for colsample_bytree in [0.9, 0.8, 0.7, 0.6, 0.5]:
+    for subsample in [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]:
+        for colsample_bytree in [1.0, 0.9, 0.8, 0.7]:
+            for max_depth in [3, 5, 7, 9]:
+                for min_child_weight in [1, 3, 5, 7]:
                     t0 = time.time()
-                    model = xgb.XGBRegressor(max_depth=max_depth, learning_rate=0.005, n_estimators=2000, silent=True,
+                    model = xgb.XGBRegressor(max_depth=max_depth, learning_rate=0.005, n_estimators=5000, silent=True,
                                              objective='reg:linear', gamma=0, min_child_weight=min_child_weight,
                                              max_delta_step=0, subsample=subsample, colsample_bytree=colsample_bytree,
                                              base_score=0.5, seed=0, missing=None)
@@ -847,7 +854,7 @@ def xbg_parameter_search(X, y, transforms):
 
                     print('Fitting model...')
                     model.fit(X_train, y_train, eval_set=[(X_eval, y_eval)], eval_metric='rmse',
-                              early_stopping_rounds=10, verbose=False)
+                              early_stopping_rounds=100, verbose=False)
                     print('Best iteration found: ' + str(model.best_iteration))
 
                     yhat_train = model.predict(X_train)
@@ -881,11 +888,19 @@ def train_ensemble(X, y, model_type, algorithm, transforms):
     return ensemble_model
 
 
-def train_stacking_ensemble():
+def train_stacking_ensemble(X, y, transforms):
     """
     Creates a stacked ensemble of many models together.
     """
-    # TODO
+    models = []
+    X_trans = apply_transforms(X, transforms)
+    X_train, X_eval, y_train, y_eval = train_test_split(X_trans, y, test_size=0.2)
+
+    for i in range(10):
+        model = define_xgb_model('regression')
+        model.fit(X_train, y_train, verbose=False)
+        models.append(model)
+
     return None
 
 
@@ -917,11 +932,11 @@ def main():
     ex_visualize_correlations = False
     ex_visualize_sequential_relationships = False
     ex_visualize_principal_components = False
-    ex_train_model = False
+    ex_train_model = True
     ex_visualize_feature_importance = False
-    ex_cross_validate = False
+    ex_cross_validate = True
     ex_plot_learning_curve = False
-    ex_parameter_search = True
+    ex_parameter_search = False
     ex_train_ensemble = False
     ex_create_submission = False
 
