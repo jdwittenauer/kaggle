@@ -51,8 +51,8 @@ class Logger(object):
         self.log.close()
 
 
-code_dir = r'C:\Users\John\Documents\Git\kaggle\PropertyInspection'
-data_dir = r'C:\Users\John\Documents\Kaggle\Property Inspection'
+code_dir = '/home/john/git/kaggle/PropertyInspection/'
+data_dir = '/home/john/data/property/'
 os.chdir(code_dir)
 logger = Logger(data_dir + 'output.txt')
 sys.stdout = logger
@@ -108,7 +108,7 @@ def predict(X, model, transforms):
     X = apply_transforms(X, transforms)
     y_pred = model.predict(X)
 
-    return y_pred
+    return y_pred.ravel()
 
 
 def predict_probability(X, model, transforms):
@@ -484,23 +484,25 @@ def define_xgb_model(model_type):
     Defines and returns an XGB gradient boosting model.
     """
     if model_type == 'classification':
-        model = xgb.XGBClassifier(max_depth=3, learning_rate=0.1, n_estimators=100, silent=False,
+        model = xgb.XGBClassifier(max_depth=3, learning_rate=0.1, n_estimators=100, silent=True,
                                   objective='multi:softmax', gamma=0, min_child_weight=1, max_delta_step=0,
                                   subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
     else:
-        model = xgb.XGBRegressor(max_depth=3, learning_rate=0.1, n_estimators=100, silent=False,
+        # model = xgb.XGBRegressor(max_depth=3, learning_rate=0.1, n_estimators=100, silent=True,
+        #                          objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
+        #                          subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
+        model = xgb.XGBRegressor(max_depth=7, learning_rate=0.01, n_estimators=2000, silent=True,
                                  objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
-                                 subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
+                                 subsample=0.8, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
 
     return model
 
 
-def define_nn_model():
+def define_nn_model(input_size):
     """
     Defines and returns a Keras neural network model.
     """
-    input_size = 64
-    layer_size = 512
+    layer_size = 128
     output_size = 1
 
     # uniform, lecun_uniform, normal, identity, orthogonal, zero, glorot_normal, glorot_uniform, he_normal, he_uniform
@@ -523,11 +525,6 @@ def define_nn_model():
     model.add(BatchNormalization((layer_size,)))
     model.add(Dropout(0.5))
 
-    model.add(Dense(layer_size, layer_size, init=init_method))
-    model.add(PReLU((layer_size,)))
-    model.add(BatchNormalization((layer_size,)))
-    model.add(Dropout(0.5))
-
     model.add(Dense(layer_size, output_size, init=init_method))
     model.add(Activation(activation_method))
 
@@ -542,7 +539,7 @@ def define_nn_model():
     return model
 
 
-def train_model(X, y, model_type, algorithm, transforms):
+def train_model(X, y, model_type, algorithm, metric, transforms):
     """
     Trains a new model using the training data.
     """
@@ -553,10 +550,17 @@ def train_model(X, y, model_type, algorithm, transforms):
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
 
+    print('Model hyper-parameters:')
+    print(model.get_params())
+
+    print('Calculating training score...')
+    model_score = predict_score(X, y, model, metric, transforms)
+    print('Training score ='), model_score
+
     return model
 
 
-def train_xgb_model(X, y, model_type, transforms, early_stopping):
+def train_xgb_model(X, y, model_type, metric, transforms, early_stopping):
     """
     Trains a new model XGB using the training data.
     """
@@ -567,33 +571,63 @@ def train_xgb_model(X, y, model_type, transforms, early_stopping):
     if early_stopping:
         X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
         model.fit(X_train, y_train, eval_set=[(X_eval, y_eval)], eval_metric='rmse',
-                  early_stopping_rounds=10, verbose=True)
+                  early_stopping_rounds=10, verbose=False)
+        print('Best iteration found: ' + str(model.best_iteration))
+
+        print('Re-fitting at the new stopping point...')
+        model.n_estimators = model.best_iteration
+        model.fit(X, y, verbose=False)
     else:
-        model.fit(X, y, verbose=True)
+        model.fit(X, y, verbose=False)
 
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
+
+    print('Model hyper-parameters:')
+    print(model.get_params())
+
+    print('Calculating training score...')
+    model_score = predict_score(X, y, model, metric, transforms)
+    print('Training score ='), model_score
 
     return model
 
 
-def train_nn_model(X, y, transforms, early_stopping):
+def train_nn_model(X, y, metric, transforms, early_stopping):
     """
     Trains a new Keras model using the training data.
     """
     t0 = time.time()
-    model = define_nn_model()
     X = apply_transforms(X, transforms)
 
+    print('Compiling...')
+    model = define_nn_model(X.shape[1])
+
+    print('Beginning training...')
+    history = None
     if early_stopping:
         X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
-        model.fit(X_train, y_train, batch_size=128, nb_epochs=100, verbose=1,
-                  validation_data=(X_eval, y_eval), shuffle=True, callbacks=[])
+        history = model.fit(X_train, y_train, batch_size=128, nb_epoch=100, verbose=0,
+                            validation_data=(X_eval, y_eval), shuffle=True, callbacks=[])
     else:
-        model.fit(X, y, batch_size=128, nb_epochs=100, verbose=1, shuffle=True, callbacks=[])
+        history = model.fit(X, y, batch_size=128, nb_epoch=100, verbose=0, shuffle=True, callbacks=[])
 
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
+
+    print('Model hyper-parameters:')
+    print(model.get_config())
+
+    print('Min eval loss ='), min(history.history['val_loss'])
+    print('Min eval epoch ='), min(enumerate(history.history['loss']), key=lambda x: x[1])[0] + 1
+
+    print('Calculating training score...')
+    train_score = predict_score(X_train, y_train, model, metric, transforms)
+    print('Training score ='), train_score
+
+    print('Calculating evaluation score...')
+    eval_score = predict_score(X_eval, y_eval, model, metric, transforms)
+    print('Evaluation score ='), eval_score
 
     return model
 
@@ -620,7 +654,7 @@ def visualize_feature_importance(train_data, model, column_offset):
     fig.tight_layout()
 
 
-def cross_validate(X, y, model_type, algorithm, metric, transforms, folds=3):
+def cross_validate(X, y, model_type, algorithm, metric, transforms):
     """
     Performs cross-validation to estimate the true performance of the model.
     """
@@ -628,14 +662,14 @@ def cross_validate(X, y, model_type, algorithm, metric, transforms, folds=3):
     X = apply_transforms(X, transforms)
 
     t0 = time.time()
-    y_pred = cross_val_predict(model, X, y, cv=folds, n_jobs=-1)
+    y_pred = cross_val_predict(model, X, y, cv=5, n_jobs=1)
     t1 = time.time()
     print('Cross-validation completed in {0:3f} s.'.format(t1 - t0))
 
     return score(y, y_pred, metric)
 
 
-def cross_validate_custom(X, y, model, transforms, folds=3):
+def cross_validate_custom(X, y, model, transforms):
     """
     Performs manual cross-validation to estimate the true performance of the model.
     """
@@ -644,7 +678,7 @@ def cross_validate_custom(X, y, model, transforms, folds=3):
     t0 = time.time()
     y_pred = np.array([])
     y_true = np.array([])
-    kf = KFold(y.shape[0], n_folds=folds, shuffle=True)
+    kf = KFold(y.shape[0], n_folds=5, shuffle=True)
     for train_index, test_index in kf:
         model.fit(X[train_index], y[train_index])
         y_pred = np.append(y_pred, model.predict(X[test_index]))
@@ -656,7 +690,7 @@ def cross_validate_custom(X, y, model, transforms, folds=3):
     return gini_score(y_true, y_pred)
 
 
-def sequence_cross_validate(X, y, model_type, algorithm, metric, transforms, strategy='traditional', folds=3,
+def sequence_cross_validate(X, y, model_type, algorithm, metric, transforms, strategy='traditional', folds=4,
                             window_type='cumulative', min_window=0, forecast_range=1, plot=False):
     """
     Performs time series cross-validation to estimate the true performance of the model.
@@ -715,7 +749,7 @@ def plot_learning_curve(X, y, model_type, algorithm, metric, transforms):
         metric = None
 
     t0 = time.time()
-    train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric, cv=3, n_jobs=-1)
+    train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric, cv=5, n_jobs=1)
     train_scores_mean = np.mean(train_scores, axis=1)
     train_scores_std = np.std(train_scores, axis=1)
     test_scores_mean = np.mean(test_scores, axis=1)
@@ -770,7 +804,7 @@ def parameter_search(X, y, model_type, algorithm, metric, transforms):
                        'min_samples_leaf': [1, 3, 10, 30, 100]}]
 
     t0 = time.time()
-    grid_estimator = GridSearchCV(model, param_grid, scoring=metric, cv=3, n_jobs=-1)
+    grid_estimator = GridSearchCV(model, param_grid, scoring=metric, cv=5, n_jobs=1)
     grid_estimator.fit(X, y)
     t1 = time.time()
     print('Grid search completed in {0:3f} s.'.format(t1 - t0))
@@ -786,6 +820,48 @@ def random_parameter_search():
     """
     # TODO
     return None
+
+
+def xbg_parameter_search(X, y, transforms):
+    """
+    Performs an exhaustive search over the specified model parameters.
+    """
+    print('')
+    print('')
+
+    X = apply_transforms(X, transforms)
+    X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
+
+    for max_depth in [3, 5, 7, 9]:
+        for min_child_weight in [1, 3, 5, 7]:
+            for subsample in [0.9, 0.8, 0.7, 0.6, 0.5]:
+                for colsample_bytree in [0.9, 0.8, 0.7, 0.6, 0.5]:
+                    t0 = time.time()
+                    model = xgb.XGBRegressor(max_depth=max_depth, learning_rate=0.005, n_estimators=2000, silent=True,
+                                             objective='reg:linear', gamma=0, min_child_weight=min_child_weight,
+                                             max_delta_step=0, subsample=subsample, colsample_bytree=colsample_bytree,
+                                             base_score=0.5, seed=0, missing=None)
+
+                    print('Model hyper-parameters:')
+                    print(model.get_params())
+
+                    print('Fitting model...')
+                    model.fit(X_train, y_train, eval_set=[(X_eval, y_eval)], eval_metric='rmse',
+                              early_stopping_rounds=10, verbose=False)
+                    print('Best iteration found: ' + str(model.best_iteration))
+
+                    yhat_train = model.predict(X_train)
+                    train_score = gini_score(y_train, yhat_train)
+                    print('Training score ='), train_score
+
+                    yhat_eval = model.predict(X_eval)
+                    eval_score = gini_score(y_eval, yhat_eval)
+                    print('Evaluation score ='), eval_score
+
+                    t1 = time.time()
+                    print('Model trained in {0:3f} s.'.format(t1 - t0))
+                    print('')
+                    print('')
 
 
 def train_ensemble(X, y, model_type, algorithm, transforms):
@@ -841,11 +917,11 @@ def main():
     ex_visualize_correlations = False
     ex_visualize_sequential_relationships = False
     ex_visualize_principal_components = False
-    ex_train_model = True
+    ex_train_model = False
     ex_visualize_feature_importance = False
-    ex_cross_validate = True
+    ex_cross_validate = False
     ex_plot_learning_curve = False
-    ex_parameter_search = False
+    ex_parameter_search = True
     ex_train_ensemble = False
     ex_create_submission = False
 
@@ -855,13 +931,15 @@ def main():
     model_file = 'model.pkl'
 
     model_type = 'regression'  # classification, regression
-    algorithm = 'ridge'  # bayes, logistic, ridge, svm, sgd, forest, boost, xgb, nn
+    algorithm = 'xgb'  # bayes, logistic, ridge, svm, sgd, forest, boost, xgb, nn
     metric = 'gini'  # accuracy, f1, log_loss, mean_absolute_error, mean_squared_error, r2, roc_auc, 'gini'
     scaling = 'standard'  # standard, minmax
     transforms = [('onehot', None), ('scaler', None)]
-    categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
+    categories = []
+    # categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
     # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
     #               19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+    early_stopping = True
     label_index = 0
     column_offset = 1
     plot_size = 16
@@ -882,6 +960,7 @@ def main():
     print('Scaling Strategy = {0}'.format(scaling))
     print('Transforms = {0}'.format(transforms))
     print('Categorical Variables = {0}'.format(categories))
+    print('Early Stopping = {0}'.format(early_stopping))
 
     if ex_process_train_data:
         print('Reading in and processing data files...')
@@ -920,14 +999,12 @@ def main():
 
     if ex_train_model:
         print('Training model...')
-        model = train_model(X, y, model_type, algorithm, transforms)
-
-        print('Model hyper-parameters:')
-        print(model.get_params())
-
-        print('Calculating training score...')
-        model_score = predict_score(X, y, model, metric, transforms)
-        print('Training score ='), model_score
+        if algorithm == 'nn':
+            model = train_nn_model(X, y, metric, transforms, early_stopping)
+        elif algorithm == 'xgb':
+            model = train_xgb_model(X, y, model_type, metric, transforms, early_stopping)
+        else:
+            model = train_model(X, y, model_type, algorithm, metric, transforms)
 
         if ex_visualize_feature_importance and (algorithm == 'forest' or algorithm == 'boost'):
             print('Generating feature importance plot...')
@@ -935,7 +1012,13 @@ def main():
 
         if ex_cross_validate:
             print('Performing cross-validation...')
-            cross_validation_score = cross_validate(X, y, model_type, algorithm, metric, transforms, folds=3)
+            if algorithm == 'nn':
+                cross_validation_score = cross_validate_custom(X, y, model, transforms)
+            elif algorithm == 'xgb':
+                cross_validation_score = cross_validate_custom(X, y, model, transforms)
+            else:
+                cross_validation_score = cross_validate(X, y, model_type, algorithm, metric, transforms)
+
             print('Cross-validation score ='), cross_validation_score
 
         if ex_plot_learning_curve:
@@ -944,10 +1027,15 @@ def main():
 
     if ex_parameter_search:
         print('Performing hyper-parameter grid search...')
-        best_model, best_params, best_score = parameter_search(X, y, model_type, algorithm, metric, transforms)
-        print('Best model = ', best_model)
-        print('Best params = ', best_params)
-        print('Best score = ', best_score)
+        if algorithm == 'nn':
+            print('TODO')
+        elif algorithm == 'xgb':
+            xbg_parameter_search(X, y, transforms)
+        else:
+            best_model, best_params, best_score = parameter_search(X, y, model_type, algorithm, metric, transforms)
+            print('Best model = ', best_model)
+            print('Best params = ', best_params)
+            print('Best score = ', best_score)
 
     if ex_train_ensemble:
         print('Creating an ensemble of models...')
