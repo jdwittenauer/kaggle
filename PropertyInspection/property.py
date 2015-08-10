@@ -106,9 +106,17 @@ def predict(X, model, transforms):
     Predicts the class label.
     """
     X = apply_transforms(X, transforms)
-    y_pred = model.predict(X)
 
-    return y_pred.ravel()
+    if type(model) is list:
+        preds = np.zeros((X.shape[0], len(model)))
+        for i in range(len(model)):
+            preds[:, i] = model[i].predict(X).ravel()
+
+        y_pred = preds.sum(axis=1) / len(model)
+    else:
+        y_pred = model.predict(X).ravel()
+
+    return y_pred
 
 
 def predict_probability(X, model, transforms):
@@ -116,7 +124,7 @@ def predict_probability(X, model, transforms):
     Predicts the class probabilities.
     """
     X = apply_transforms(X, transforms)
-    y_prob = model.predict_proba(X)[:, 1]
+    y_prob = model.predict_proba(X)
 
     return y_prob
 
@@ -425,7 +433,7 @@ def visualize_principal_components(X, y, model_type, num_components, transforms)
             fig.tight_layout()
 
 
-def visualize_manifolds():
+def visualize_manifold(train_data, model_type, manifold_type, num_components):
     """
     Generates plots to visualize the data transformed by a non-linear manifold algorithm.
     """
@@ -451,6 +459,10 @@ def define_model(model_type, algorithm):
         elif algorithm == 'forest':
             model = RandomForestClassifier(n_estimators=10, criterion='gini', max_features='auto', max_depth=None,
                                            min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
+        elif algorithm == 'xt':
+            model = ExtraTreesClassifier(n_estimators=10, criterion='gini', max_depth=None, min_samples_split=2,
+                                         min_samples_leaf=1, min_weight_fraction_leaf=0.0, max_features=None,
+                                         max_leaf_nodes=None, n_jobs=-1)
         elif algorithm == 'boost':
             model = GradientBoostingClassifier(loss='deviance', learning_rate=0.1, n_estimators=100, subsample=1.0,
                                                min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
@@ -468,6 +480,10 @@ def define_model(model_type, algorithm):
         elif algorithm == 'forest':
             model = RandomForestRegressor(n_estimators=10, criterion='mse', max_features='auto', max_depth=None,
                                           min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
+        elif algorithm == 'xt':
+            model = ExtraTreesRegressor(n_estimators=10, criterion='gini', max_depth=None, min_samples_split=2,
+                                        min_samples_leaf=1, min_weight_fraction_leaf=0.0, max_features=None,
+                                        max_leaf_nodes=None, n_jobs=-1)
         elif algorithm == 'boost':
             model = GradientBoostingRegressor(loss='ls', learning_rate=0.1, n_estimators=100, subsample=1.0,
                                               min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
@@ -816,17 +832,7 @@ def parameter_search(X, y, model_type, algorithm, metric, transforms):
     t1 = time.time()
     print('Grid search completed in {0:3f} s.'.format(t1 - t0))
 
-    # TODO - plot the grid_scores variable
-
     return grid_estimator.best_estimator_, grid_estimator.best_params_, grid_estimator.best_score_
-
-
-def random_parameter_search():
-    """
-    Performs a random search over the specified parameter distributions.
-    """
-    # TODO
-    return None
 
 
 def xbg_parameter_search(X, y, transforms):
@@ -871,7 +877,14 @@ def xbg_parameter_search(X, y, transforms):
                     print('')
 
 
-def train_ensemble(X, y, model_type, algorithm, transforms):
+def nn_parameter_search(X, y, transforms):
+    """
+    Performs an exhaustive search over the specified model parameters.
+    """
+    print('TODO')
+
+
+def train_ensemble(X, y, model_type, algorithm, metric, transforms):
     """
     Creates an ensemble of many models together.
     """
@@ -885,22 +898,51 @@ def train_ensemble(X, y, model_type, algorithm, transforms):
     t1 = time.time()
     print('Ensemble training completed in {0:3f} s.'.format(t1 - t0))
 
+    print('Calculating ensemble training score...')
+    ensemble_score = predict_score(X, y, ensemble_model, metric, transforms)
+    print('Ensemble Training score ='), ensemble_score
+
     return ensemble_model
 
 
-def train_stacking_ensemble(X, y, transforms):
+def train_averaged_ensemble(X, y, transforms, evaluate):
+    """
+    Creates an averaged ensemble of many models together.
+    """
+    models = []
+    model_count = 10
+    X_trans = apply_transforms(X, transforms)
+
+    if evaluate:
+        preds = np.zeros((y.shape, model_count))
+        X_train, X_eval, y_train, y_eval = train_test_split(X_trans, y, test_size=0.2)
+
+        for i in range(model_count):
+            model = define_xgb_model('regression')
+            model.fit(X_train, y_train, verbose=False)
+
+            y_pred = model.predict(X_eval)
+            print('Model eval score = '), gini_score(y_eval, y_pred)
+
+            models.append(model)
+            preds[:, i] = y_pred
+
+        y_avg = preds.sum(axis=1) / model_count
+        print('Ensemble eval score = '), gini_score(y_eval, y_avg)
+    else:
+        for i in range(model_count):
+            model = define_xgb_model('regression')
+            model.fit(X, y, verbose=False)
+            models.append(model)
+
+    return models
+
+
+def train_stacked_ensemble(X, y, transforms, evaluate):
     """
     Creates a stacked ensemble of many models together.
     """
-    models = []
-    X_trans = apply_transforms(X, transforms)
-    X_train, X_eval, y_train, y_eval = train_test_split(X_trans, y, test_size=0.2)
-
-    for i in range(10):
-        model = define_xgb_model('regression')
-        model.fit(X_train, y_train, verbose=False)
-        models.append(model)
-
+    # TODO
     return None
 
 
@@ -946,9 +988,10 @@ def main():
     model_file = 'model.pkl'
 
     model_type = 'regression'  # classification, regression
-    algorithm = 'xgb'  # bayes, logistic, ridge, svm, sgd, forest, boost, xgb, nn
+    algorithm = 'xgb'  # bayes, logistic, ridge, svm, sgd, forest, xt, boost, xgb, nn
     metric = 'gini'  # accuracy, f1, log_loss, mean_absolute_error, mean_squared_error, r2, roc_auc, 'gini'
     scaling = 'standard'  # standard, minmax
+    ensemble_mode = 'averaging'  # bagging, averaging, stacking
     transforms = [('onehot', None), ('scaler', None)]
     categories = []
     # categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
@@ -1043,7 +1086,7 @@ def main():
     if ex_parameter_search:
         print('Performing hyper-parameter grid search...')
         if algorithm == 'nn':
-            print('TODO')
+            nn_parameter_search(X, y, transforms)
         elif algorithm == 'xgb':
             xbg_parameter_search(X, y, transforms)
         else:
@@ -1054,11 +1097,12 @@ def main():
 
     if ex_train_ensemble:
         print('Creating an ensemble of models...')
-        model = train_ensemble(X, y, model_type, algorithm, transforms)
-
-        print('Calculating ensemble training score...')
-        ensemble_score = predict_score(X, y, model, metric, transforms)
-        print('Ensemble Training score ='), ensemble_score
+        if ensemble_mode == 'averaging':
+            model = train_averaged_ensemble(X, y, transforms, evaluate=True)
+        elif ensemble_mode == 'stacking':
+            model = train_stacked_ensemble(X, y, transforms, evaluate=True)
+        else:
+            model = train_ensemble(X, y, model_type, algorithm, metric, transforms)
 
     if ex_save_model:
         print('Saving model to disk...')
