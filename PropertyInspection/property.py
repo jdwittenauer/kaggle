@@ -407,38 +407,41 @@ def visualize_sequential_relationships(train_data, plot_size, smooth=None, windo
         fig.tight_layout()
 
 
-def visualize_principal_components(X, y, model_type, num_components, transforms):
-    """
-    Generates scatter plots to visualize the principal components of the data set.
-    """
-    X = apply_transforms(X, transforms)
-    if model_type == 'classification':
-        class_count = np.count_nonzero(np.unique(y))
-        colors = ['b', 'g', 'r', 'c', 'm', 'y', 'k', 'w']
-
-        for i in range(num_components):
-            fig, ax = plt.subplots(figsize=(16, 10))
-            for j in range(class_count):
-                ax.scatter(X[y == j, i], X[y == j, i + 1], s=30, c=colors[j], label=j)
-            ax.set_title('Principal Components ' + str(i) + ' and ' + str(i + 1))
-            ax.legend()
-            fig.tight_layout()
-    else:
-        for i in range(num_components):
-            fig, ax = plt.subplots(figsize=(16, 10))
-            sc = ax.scatter(X[:, i], X[:, i + 1], s=30, c=y, cmap='Blues')
-            ax.set_title('Principal Components ' + str(i) + ' and ' + str(i + 1))
-            ax.legend()
-            fig.colorbar(sc)
-            fig.tight_layout()
-
-
-def visualize_manifold(train_data, model_type, manifold_type, num_components):
+def visualize_manifolds(X, y, manifold_type, model_type, n_components):
     """
     Generates plots to visualize the data transformed by a non-linear manifold algorithm.
     """
-    # TODO
-    return None
+    X_trans = StandardScaler().fit_transform(X)
+    if manifold_type == 'pca':
+        X_trans = PCA(whiten=True).fit_transform(X_trans)
+    elif manifold_type == 'isomap':
+        X_trans = Isomap().fit_transform(X_trans)
+    elif manifold_type == 'lle':
+        X_trans = LocallyLinearEmbedding(method='modified').fit_transform(X_trans)
+    elif manifold_type == 'mds':
+        X_trans = MDS().fit_transform(X_trans)
+    elif manifold_type == 't-sne':
+        X_trans = TSNE().fit_transform(X_trans)
+
+    if model_type == 'classification':
+        class_count = np.count_nonzero(np.unique(y))
+        colors = sb.color_palette('hls', class_count)
+
+        for i in range(n_components):
+            fig, ax = plt.subplots(figsize=(16, 10))
+            for j in range(class_count):
+                ax.scatter(X_trans[y == j, i], X_trans[y == j, i + 1], s=50, c=colors[j], label=j)
+            ax.set_title('Components ' + str(i) + ' and ' + str(i + 1))
+            ax.legend()
+            fig.tight_layout()
+    else:
+        for i in range(n_components):
+            fig, ax = plt.subplots(figsize=(16, 10))
+            sc = ax.scatter(X_trans[:, i], X_trans[:, i + 1], s=50, c=y, cmap='Reds')
+            ax.set_title('Components ' + str(i) + ' and ' + str(i + 1))
+            ax.legend()
+            fig.colorbar(sc)
+            fig.tight_layout()
 
 
 def define_model(model_type, algorithm):
@@ -973,7 +976,7 @@ def main():
     ex_visualize_feature_distributions = False
     ex_visualize_correlations = False
     ex_visualize_sequential_relationships = False
-    ex_visualize_principal_components = False
+    ex_visualize_manifolds = False
     ex_train_model = True
     ex_visualize_feature_importance = False
     ex_cross_validate = True
@@ -987,6 +990,7 @@ def main():
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
 
+    manifold_type = 'pca'  # pca, isomap, lle, mds, t-sne
     model_type = 'regression'  # classification, regression
     algorithm = 'xgb'  # bayes, logistic, ridge, svm, sgd, forest, xt, boost, xgb, nn
     metric = 'gini'  # accuracy, f1, log_loss, mean_absolute_error, mean_squared_error, r2, roc_auc, 'gini'
@@ -1001,7 +1005,7 @@ def main():
     label_index = 0
     column_offset = 1
     plot_size = 16
-    num_components = 3
+    n_components = 3
 
     train_data = None
     test_data = None
@@ -1047,9 +1051,9 @@ def main():
         print('Visualizing sequential relationships...')
         visualize_sequential_relationships(train_data, plot_size)
 
-    if ex_visualize_principal_components:
+    if ex_visualize_manifolds:
         print('Visualizing principal components...')
-        visualize_principal_components(X, y, model_type, num_components, transforms)
+        visualize_manifolds(X, y, manifold_type, model_type, n_components)
 
     if ex_load_model:
         print('Loading model from disk...')
