@@ -14,9 +14,11 @@ import matplotlib.pyplot as plt
 import seaborn as sb
 from datetime import datetime
 
+from sklearn.cluster import *
 from sklearn.cross_validation import *
 from sklearn.decomposition import *
 from sklearn.ensemble import *
+from sklearn.feature_extraction import *
 from sklearn.feature_selection import *
 from sklearn.grid_search import *
 from sklearn.learning_curve import *
@@ -49,6 +51,20 @@ class Logger(object):
 
     def close(self):
         self.log.close()
+
+
+class AllLabelEncoder(object):
+    def __init__(self):
+        print('TODO')
+
+    def fit(self):
+        print('TODO')
+
+    def transform(self):
+        print('TODO')
+
+    def fit_transform(self):
+        print('TODO')
 
 
 code_dir = '/home/john/git/kaggle/PropertyInspection/'
@@ -106,15 +122,7 @@ def predict(X, model, transforms):
     Predicts the class label.
     """
     X = apply_transforms(X, transforms)
-
-    if type(model) is list:
-        preds = np.zeros((X.shape[0], len(model)))
-        for i in range(len(model)):
-            preds[:, i] = model[i].predict(X).ravel()
-
-        y_pred = preds.sum(axis=1) / len(model)
-    else:
-        y_pred = model.predict(X).ravel()
+    y_pred = model.predict(X).ravel()
 
     return y_pred
 
@@ -229,56 +237,16 @@ def process_data(directory, train_file, test_file, label_index, column_offset, e
     return train_data, test_data, X, y, X_test
 
 
-def create_transforms(X, transforms, missing='NaN', impute_strategy='mean',
-                      scaling_strategy='standard', categories=None):
+def fit_transforms(X, transforms):
     """
-    Creates transform objects to apply before training or scoring.
+    Fits new transformations from a data set.
     """
-    for i, (key, transform) in enumerate(transforms):
-        if key == 'imputer':
-            # impute missing values
-            transform = Imputer(missing_values=missing, strategy=impute_strategy)
-            X = transform.fit_transform(X)
-        elif key == 'onehot':
-            # create a category encoder
-            transform = OneHotEncoder(categorical_features=categories, sparse=False)
-            X = transform.fit_transform(X)
-        elif key == 'selector':
-            # create a feature selection transform
-            transform = VarianceThreshold(threshold=0.0)
-            X = transform.fit_transform(X)
-        elif key == 'scaler':
-            # create a scaling transform
-            if scaling_strategy == 'standard':
-                transform = StandardScaler()
-                X = transform.fit_transform(X)
-            elif scaling_strategy == 'minmax':
-                transform = MinMaxScaler()
-                X = transform.fit_transform(X)
-        elif key == 'pca':
-            # create a PCA transform
-            transform = PCA(whiten=True)
-            transform.fit(X)
-        elif key == 'isomap':
-            # create an isomap transform
-            transform = Isomap()
-            transform.fit(X)
-        elif key == 'lle':
-            # create a modified LLE transform
-            transform = LocallyLinearEmbedding(method='modified')
-            transform.fit(X)
-        elif key == 'mds':
-            # create a multi-dimensional scaling transform
-            transform = MDS()
-            transform.fit(X)
-        elif key == 't-sne':
-            # create a t-SNE transform
-            transform = TSNE()
-            transform.fit(X)
+    for i, trans in enumerate(transforms):
+        if trans is not None:
+            X = trans.fit_transform(X)
+        transforms[i] = trans
 
-        transforms[i] = (key, transform)
-
-    print('Transform creation complete.')
+    print('Transform fitting complete.')
 
     return transforms
 
@@ -287,9 +255,9 @@ def apply_transforms(X, transforms):
     """
     Applies pre-computed transformations to a data set.
     """
-    for key, transform in transforms:
-        if transform is not None:
-            X = transform.transform(X)
+    for trans in transforms:
+        if trans is not None:
+            X = trans.transform(X)
 
     return X
 
@@ -407,21 +375,11 @@ def visualize_sequential_relationships(train_data, plot_size, smooth=None, windo
         fig.tight_layout()
 
 
-def visualize_manifolds(X, y, manifold_type, model_type, n_components):
+def visualize_transforms(X, y, model_type, n_components, transforms):
     """
     Generates plots to visualize the data transformed by a non-linear manifold algorithm.
     """
-    X_trans = StandardScaler().fit_transform(X)
-    if manifold_type == 'pca':
-        X_trans = PCA(whiten=True).fit_transform(X_trans)
-    elif manifold_type == 'isomap':
-        X_trans = Isomap().fit_transform(X_trans)
-    elif manifold_type == 'lle':
-        X_trans = LocallyLinearEmbedding(method='modified').fit_transform(X_trans)
-    elif manifold_type == 'mds':
-        X_trans = MDS().fit_transform(X_trans)
-    elif manifold_type == 't-sne':
-        X_trans = TSNE().fit_transform(X_trans)
+    X_trans = apply_transforms(X, transforms)
 
     if model_type == 'classification':
         class_count = np.count_nonzero(np.unique(y))
@@ -564,8 +522,9 @@ def train_model(X, y, model_type, algorithm, metric, transforms):
     """
     t0 = time.time()
     model = define_model(model_type, algorithm)
-    X_trans = apply_transforms(X, transforms)
-    model.fit(X_trans, y)
+    transforms = fit_transforms(X, transforms)
+    X = apply_transforms(X, transforms)
+    model.fit(X, y)
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
 
@@ -585,19 +544,25 @@ def train_xgb_model(X, y, model_type, metric, transforms, early_stopping):
     """
     t0 = time.time()
     model = define_xgb_model(model_type)
-    X_trans = apply_transforms(X, transforms)
 
     if early_stopping:
-        X_train, X_eval, y_train, y_eval = train_test_split(X_trans, y, test_size=0.1)
+        X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
+        transforms = fit_transforms(X_train, transforms)
+        X_train = apply_transforms(X_train, transforms)
+        X_eval = apply_transforms(X_eval, transforms)
         model.fit(X_train, y_train, eval_set=[(X_eval, y_eval)], eval_metric='rmse',
                   early_stopping_rounds=100, verbose=False)
         print('Best iteration found: ' + str(model.best_iteration))
 
         print('Re-fitting at the new stopping point...')
         model.n_estimators = model.best_iteration
-        model.fit(X_trans, y, verbose=False)
+        transforms = fit_transforms(X, transforms)
+        X = apply_transforms(X, transforms)
+        model.fit(X, y, verbose=False)
     else:
-        model.fit(X_trans, y, verbose=False)
+        transforms = fit_transforms(X, transforms)
+        X = apply_transforms(X, transforms)
+        model.fit(X, y, verbose=False)
 
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
@@ -617,18 +582,22 @@ def train_nn_model(X, y, metric, transforms, early_stopping):
     Trains a new Keras model using the training data.
     """
     t0 = time.time()
-    X_trans = apply_transforms(X, transforms)
 
     print('Compiling...')
     model = define_nn_model(X.shape[1])
 
     print('Beginning training...')
     if early_stopping:
-        X_train, X_eval, y_train, y_eval = train_test_split(X_trans, y, test_size=0.1)
+        X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
+        transforms = fit_transforms(X_train, transforms)
+        X_train = apply_transforms(X_train, transforms)
+        X_eval = apply_transforms(X_eval, transforms)
         history = model.fit(X_train, y_train, batch_size=128, nb_epoch=100, verbose=0,
                             validation_data=(X_eval, y_eval), shuffle=True, callbacks=[])
     else:
-        history = model.fit(X_trans, y, batch_size=128, nb_epoch=100, verbose=0, shuffle=True, callbacks=[])
+        transforms = fit_transforms(X, transforms)
+        X = apply_transforms(X, transforms)
+        history = model.fit(X, y, batch_size=128, nb_epoch=100, verbose=0, shuffle=True, callbacks=[])
 
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
@@ -651,7 +620,7 @@ def train_nn_model(X, y, metric, transforms, early_stopping):
         print('Evaluation score ='), eval_score
     else:
         print('Calculating training score...')
-        yhat = model.predict(X_trans).ravel()
+        yhat = model.predict(X).ravel()
         train_score = score(y, yhat, metric)
         print('Training score ='), train_score
 
@@ -969,17 +938,16 @@ def experiments():
 def main():
     ex_process_train_data = True
     ex_generate_features = False
-    ex_create_transforms = True
     ex_load_model = False
     ex_save_model = False
     ex_visualize_variable_relationships = False
     ex_visualize_feature_distributions = False
     ex_visualize_correlations = False
     ex_visualize_sequential_relationships = False
-    ex_visualize_manifolds = False
+    ex_visualize_transforms = False
     ex_train_model = True
     ex_visualize_feature_importance = False
-    ex_cross_validate = True
+    ex_cross_validate = False
     ex_plot_learning_curve = False
     ex_parameter_search = False
     ex_train_ensemble = False
@@ -990,13 +958,10 @@ def main():
     submit_file = 'submission.csv'
     model_file = 'model.pkl'
 
-    manifold_type = 'pca'  # pca, isomap, lle, mds, t-sne
     model_type = 'regression'  # classification, regression
     algorithm = 'xgb'  # bayes, logistic, ridge, svm, sgd, forest, xt, boost, xgb, nn
     metric = 'gini'  # accuracy, f1, log_loss, mean_absolute_error, mean_squared_error, r2, roc_auc, 'gini'
-    scaling = 'standard'  # standard, minmax
     ensemble_mode = 'averaging'  # bagging, averaging, stacking
-    transforms = [('onehot', None), ('scaler', None)]
     categories = []
     # categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
     # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
@@ -1005,7 +970,7 @@ def main():
     label_index = 0
     column_offset = 1
     plot_size = 16
-    n_components = 3
+    n_components = 2
 
     train_data = None
     test_data = None
@@ -1014,12 +979,33 @@ def main():
     X_test = None
     model = None
 
+    all_transforms = [Imputer(missing_values='NaN', strategy='mean', axis=0),
+                      LabelEncoder(),
+                      OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False),
+                      DictVectorizer(sparse=False),
+                      FeatureHasher(n_features=1048576, input_type='dict'),
+                      VarianceThreshold(threshold=0.0),
+                      Binarizer(threshold=0.0),
+                      StandardScaler(),
+                      MinMaxScaler(),
+                      PCA(n_components=None, whiten=False),
+                      TruncatedSVD(n_components=None),
+                      NMF(n_components=None,)
+                      FastICA(n_components=None, whiten=True),
+                      Isomap(n_components=2),
+                      LocallyLinearEmbedding(n_components=2, method='modified'),
+                      MDS(n_components=2),
+                      TSNE(n_components=2, learning_rate=1000, n_iter=1000),
+                      KMeans(n_clusters=8)]
+
+    transforms = [OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False),
+                  StandardScaler()]
+
     print('Starting process (' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ')...')
     print('Model Type = {0}'.format(model_type))
     print('Algorithm = {0}'.format(algorithm))
     print('Scoring Metric = {0}'.format(metric))
     print('Generate Features = {0}'.format(ex_generate_features))
-    print('Scaling Strategy = {0}'.format(scaling))
     print('Transforms = {0}'.format(transforms))
     print('Categorical Variables = {0}'.format(categories))
     print('Early Stopping = {0}'.format(early_stopping))
@@ -1028,10 +1014,6 @@ def main():
         print('Reading in and processing data files...')
         train_data, test_data, X, y, X_test = process_data(data_dir, train_file, test_file, label_index,
                                                            column_offset, ex_generate_features)
-
-    if ex_create_transforms:
-        print('Creating data transforms...')
-        transforms = create_transforms(X, transforms, scaling_strategy=scaling, categories=categories)
 
     if ex_visualize_variable_relationships:
         print('Visualizing pairwise relationships...')
@@ -1051,9 +1033,9 @@ def main():
         print('Visualizing sequential relationships...')
         visualize_sequential_relationships(train_data, plot_size)
 
-    if ex_visualize_manifolds:
-        print('Visualizing principal components...')
-        visualize_manifolds(X, y, manifold_type, model_type, n_components)
+    if ex_visualize_transforms:
+        print('Visualizing transformed data...')
+        visualize_transforms(X, y, model_type, n_components, transforms)
 
     if ex_load_model:
         print('Loading model from disk...')
