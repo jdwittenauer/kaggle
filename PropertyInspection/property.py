@@ -379,24 +379,24 @@ def visualize_transforms(X, y, model_type, n_components, transforms):
     """
     Generates plots to visualize the data transformed by a non-linear manifold algorithm.
     """
-    X_trans = apply_transforms(X, transforms)
+    X = apply_transforms(X, transforms)
 
     if model_type == 'classification':
         class_count = np.count_nonzero(np.unique(y))
         colors = sb.color_palette('hls', class_count)
 
-        for i in range(n_components):
+        for i in range(n_components - 1):
             fig, ax = plt.subplots(figsize=(16, 10))
             for j in range(class_count):
-                ax.scatter(X_trans[y == j, i], X_trans[y == j, i + 1], s=50, c=colors[j], label=j)
-            ax.set_title('Components ' + str(i) + ' and ' + str(i + 1))
+                ax.scatter(X[y == j, i], X[y == j, i + 1], s=50, c=colors[j], label=j)
+            ax.set_title('Components ' + str(i + 1) + ' and ' + str(i + 2))
             ax.legend()
             fig.tight_layout()
     else:
-        for i in range(n_components):
+        for i in range(n_components - 1):
             fig, ax = plt.subplots(figsize=(16, 10))
-            sc = ax.scatter(X_trans[:, i], X_trans[:, i + 1], s=50, c=y, cmap='Reds')
-            ax.set_title('Components ' + str(i) + ' and ' + str(i + 1))
+            sc = ax.scatter(X[:, i], X[:, i + 1], s=50, c=y, cmap='Reds')
+            ax.set_title('Components ' + str(i + 1) + ' and ' + str(i + 2))
             ax.legend()
             fig.colorbar(sc)
             fig.tight_layout()
@@ -421,9 +421,8 @@ def define_model(model_type, algorithm):
             model = RandomForestClassifier(n_estimators=10, criterion='gini', max_features='auto', max_depth=None,
                                            min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
         elif algorithm == 'xt':
-            model = ExtraTreesClassifier(n_estimators=10, criterion='gini', max_depth=None, min_samples_split=2,
-                                         min_samples_leaf=1, min_weight_fraction_leaf=0.0, max_features=None,
-                                         max_leaf_nodes=None, n_jobs=-1)
+            model = ExtraTreesClassifier(n_estimators=10, criterion='gini', max_features='auto', max_depth=None,
+                                         min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
         elif algorithm == 'boost':
             model = GradientBoostingClassifier(loss='deviance', learning_rate=0.1, n_estimators=100, subsample=1.0,
                                                min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
@@ -442,9 +441,8 @@ def define_model(model_type, algorithm):
             model = RandomForestRegressor(n_estimators=10, criterion='mse', max_features='auto', max_depth=None,
                                           min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
         elif algorithm == 'xt':
-            model = ExtraTreesRegressor(n_estimators=10, criterion='gini', max_depth=None, min_samples_split=2,
-                                        min_samples_leaf=1, min_weight_fraction_leaf=0.0, max_features=None,
-                                        max_leaf_nodes=None, n_jobs=-1)
+            model = ExtraTreesRegressor(n_estimators=300, criterion='mse', max_features='auto', max_depth=12,
+                                        min_samples_split=100, min_samples_leaf=50, max_leaf_nodes=None, n_jobs=-1)
         elif algorithm == 'boost':
             model = GradientBoostingRegressor(loss='ls', learning_rate=0.1, n_estimators=100, subsample=1.0,
                                               min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
@@ -649,7 +647,7 @@ def visualize_feature_importance(train_data, model, column_offset):
     fig.tight_layout()
 
 
-def cross_validate(X, y, model_type, algorithm, metric, transforms):
+def cross_validate(X, y, model_type, algorithm, metric, transforms, n_folds):
     """
     Performs cross-validation to estimate the true performance of the model.
     """
@@ -657,14 +655,14 @@ def cross_validate(X, y, model_type, algorithm, metric, transforms):
     X = apply_transforms(X, transforms)
 
     t0 = time.time()
-    y_pred = cross_val_predict(model, X, y, cv=5, n_jobs=1)
+    y_pred = cross_val_predict(model, X, y, cv=n_folds, n_jobs=1)
     t1 = time.time()
     print('Cross-validation completed in {0:3f} s.'.format(t1 - t0))
 
     return score(y, y_pred, metric)
 
 
-def cross_validate_custom(X, y, model, transforms):
+def cross_validate_custom(X, y, model, transforms, n_folds):
     """
     Performs manual cross-validation to estimate the true performance of the model.
     """
@@ -673,7 +671,7 @@ def cross_validate_custom(X, y, model, transforms):
     t0 = time.time()
     y_pred = np.array([])
     y_true = np.array([])
-    kf = KFold(y.shape[0], n_folds=5, shuffle=True)
+    kf = KFold(y.shape[0], n_folds=n_folds, shuffle=True)
     for train_index, test_index in kf:
         model.fit(X[train_index], y[train_index])
         y_pred = np.append(y_pred, model.predict(X[test_index]))
@@ -685,7 +683,7 @@ def cross_validate_custom(X, y, model, transforms):
     return gini_score(y_true, y_pred)
 
 
-def sequence_cross_validate(X, y, model_type, algorithm, metric, transforms, strategy='traditional', folds=4,
+def sequence_cross_validate(X, y, model_type, algorithm, metric, transforms, n_folds, strategy='traditional',
                             window_type='cumulative', min_window=0, forecast_range=1, plot=False):
     """
     Performs time series cross-validation to estimate the true performance of the model.
@@ -697,13 +695,13 @@ def sequence_cross_validate(X, y, model_type, algorithm, metric, transforms, str
     train_count = len(X)
 
     if strategy == 'walk-forward':
-        folds = train_count - min_window - forecast_range
+        n_folds = train_count - min_window - forecast_range
         fold_size = 1
     else:
-        fold_size = train_count / folds
+        fold_size = train_count / n_folds
 
     t0 = time.time()
-    for i in range(folds):
+    for i in range(n_folds):
         if window_type == 'fixed':
             fold_start = i * fold_size
         else:
@@ -731,7 +729,7 @@ def sequence_cross_validate(X, y, model_type, algorithm, metric, transforms, str
     return np.mean(scores)
 
 
-def plot_learning_curve(X, y, model_type, algorithm, metric, transforms):
+def plot_learning_curve(X, y, model_type, algorithm, metric, transforms, n_folds):
     """
     Plots a learning curve showing model performance against both training and
     validation data sets as a function of the number of training samples.
@@ -744,7 +742,7 @@ def plot_learning_curve(X, y, model_type, algorithm, metric, transforms):
         metric = None
 
     t0 = time.time()
-    train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric, cv=5, n_jobs=1)
+    train_sizes, train_scores, test_scores = learning_curve(model, X, y, scoring=metric, cv=n_folds, n_jobs=1)
     train_scores_mean = np.mean(train_scores, axis=1)
     train_scores_std = np.std(train_scores, axis=1)
     test_scores_mean = np.mean(test_scores, axis=1)
@@ -788,14 +786,14 @@ def parameter_search(X, y, model_type, algorithm, metric, transforms):
     elif algorithm == 'sgd':
         param_grid = [{'loss': ['hinge', 'log', 'modified_huber'], 'penalty': ['l1', 'l2'],
                        'alpha': [0.0001, 0.001, 0.01], 'iter': [100, 1000, 10000]}]
-    elif algorithm == 'forest':
-        param_grid = [{'n_estimators': [10, 30, 100, 300], 'criterion': ['gini', 'entropy'],
-                       'max_features': ['auto', 'log2', None], 'max_depth': [3, 5, 7, None],
+    elif algorithm == 'forest' or algorithm == 'xt':
+        param_grid = [{'n_estimators': [10, 30, 100, 300], 'criterion': ['gini', 'entropy', 'mse'],
+                       'max_features': ['auto', 'log2', None], 'max_depth': [3, 5, 7, 9, None],
                        'min_samples_split': [2, 10, 30, 100], 'min_samples_leaf': [1, 3, 10, 30, 100]}]
     elif algorithm == 'boost':
         param_grid = [{'learning_rate': [0.1, 0.3, 1.0], 'subsample': [1.0, 0.9, 0.7, 0.5],
                        'n_estimators': [100, 300, 1000], 'max_features': ['auto', 'log2', None],
-                       'max_depth': [3, 5, 7, None], 'min_samples_split': [2, 10, 30, 100],
+                       'max_depth': [3, 5, 7, 9, None], 'min_samples_split': [2, 10, 30, 100],
                        'min_samples_leaf': [1, 3, 10, 30, 100]}]
 
     t0 = time.time()
@@ -877,44 +875,176 @@ def train_ensemble(X, y, model_type, algorithm, metric, transforms):
     return ensemble_model
 
 
-def train_averaged_ensemble(X, y, transforms, evaluate):
+def train_averaged_ensemble(X, y, X_test, metric, transforms, n_folds, generate_preds):
     """
     Creates an averaged ensemble of many models together.
     """
-    models = []
-    model_count = 10
-    X_trans = apply_transforms(X, transforms)
+    t0 = time.time()
+    n_models = 2
+    n_records = y.shape[0]
+    X = apply_transforms(X, transforms)
 
-    if evaluate:
-        preds = np.zeros((y.shape, model_count))
-        X_train, X_eval, y_train, y_eval = train_test_split(X_trans, y, test_size=0.2)
+    model_train_scores = np.zeros((n_folds, n_models))
+    y_models = np.zeros((n_records, n_models))
+    y_avg = np.zeros(n_records)
+    y_true = np.zeros(n_records)
 
-        for i in range(model_count):
-            model = define_xgb_model('regression')
-            model.fit(X_train, y_train, verbose=False)
+    # define models
+    rf1 = RandomForestRegressor(n_estimators=100, criterion='mse', max_features='auto', max_depth=12,
+                                min_samples_split=20, min_samples_leaf=10, max_leaf_nodes=None, n_jobs=-1)
+    rf1_bag = BaggingRegressor(base_estimator=rf1, n_estimators=10, max_samples=0.9, max_features=1.0,
+                               bootstrap=True, bootstrap_features=False)
 
-            y_pred = model.predict(X_eval)
-            print('Model eval score = '), gini_score(y_eval, y_pred)
+    xt1 = ExtraTreesRegressor(n_estimators=100, criterion='mse', max_features='auto', max_depth=12,
+                              min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
+    xt1_bag = BaggingRegressor(base_estimator=xt1, n_estimators=10, max_samples=0.9, max_features=1.0,
+                               bootstrap=True, bootstrap_features=False)
 
-            models.append(model)
-            preds[:, i] = y_pred
+    folds = list(KFold(n_records, n_folds=n_folds, shuffle=True, random_state=1337))
+    for i, (train_index, eval_index) in enumerate(folds):
+        print('Starting fold {0}...'.format(i + 1))
+        X_train = X[train_index]
+        y_train = y[train_index]
+        X_eval = X[eval_index]
+        y_eval = y[eval_index]
 
-        y_avg = preds.sum(axis=1) / model_count
-        print('Ensemble eval score = '), gini_score(y_eval, y_avg)
-    else:
-        for i in range(model_count):
-            model = define_xgb_model('regression')
-            model.fit(X, y, verbose=False)
-            models.append(model)
+        print('Fitting individual models...')
+        rf1_bag.fit(X_train, y_train)
+        xt1_bag.fit(X_train, y_train)
 
-    return models
+        print('Generating predictions and scoring...')
+        model_train_scores[i, 0] = score(y_train, rf1_bag.predict(X_train), metric)
+        model_train_scores[i, 1] = score(y_train, xt1_bag.predict(X_train), metric)
+
+        y_models[eval_index, 0] = rf1_bag.predict(X_eval)
+        y_models[eval_index, 1] = xt1_bag.predict(X_eval)
+
+        y_avg[eval_index] = y_models[eval_index, :].sum(axis=1) / n_models
+        y_true[eval_index] = y_eval
+
+    t1 = time.time()
+    print('Ensemble training completed in {0:3f} s.'.format(t1 - t0))
+
+    print('Model 1 average training score ='), model_train_scores[:, 0].sum(axis=0) / n_folds
+    print('Model 1 eval score ='), score(y_true, y_models[:, 0], metric)
+    print('Model 2 average training score ='), model_train_scores[:, 1].sum(axis=0) / n_folds
+    print('Model 2 eval score ='), score(y_true, y_models[:, 1], metric)
+    print('Ensemble eval score ='), score(y_true, y_avg, metric)
+
+    # show correlations between model predictions
+    df = pd.DataFrame(y_models, columns=['Model ' + str(i) for i in range(n_models)])
+    visualize_correlations(df)
+
+    if generate_preds:
+        print('Fitting models on full data set...')
+        n_test_records = X_test.shape[0]
+        y_models_test = np.zeros((n_test_records, n_models))
+
+        rf1_bag.fit(X, y)
+        xt1_bag.fit(X, y)
+
+        print('Generating predictions...')
+        y_models_test[:, 0] = rf1_bag.predict(X_test)
+        y_models_test[:, 1] = xt1_bag.predict(X_test)
+
+        y_avg_test = y_models_test.sum(axis=1) / n_models
+
+        print('Prediction complete.')
+        return y_avg_test
+
+    return None
 
 
-def train_stacked_ensemble(X, y, transforms, evaluate):
+def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds, generate_preds):
     """
     Creates a stacked ensemble of many models together.
     """
-    # TODO
+    t0 = time.time()
+    n_models = 2
+    n_records = y.shape[0]
+    X = apply_transforms(X, transforms)
+
+    model_train_scores = np.zeros((n_folds, n_models))
+    stacker_train_scores = np.zeros(n_folds)
+    y_models = np.zeros((n_records, n_models))
+    y_pred = np.zeros(n_records)
+    y_true = np.zeros(n_records)
+
+    # define models
+    rf1 = RandomForestRegressor(n_estimators=100, criterion='mse', max_features='auto', max_depth=12,
+                                min_samples_split=20, min_samples_leaf=10, max_leaf_nodes=None, n_jobs=-1)
+    rf1_bag = BaggingRegressor(base_estimator=rf1, n_estimators=10, max_samples=0.9, max_features=1.0,
+                               bootstrap=True, bootstrap_features=False)
+
+    xt1 = ExtraTreesRegressor(n_estimators=100, criterion='mse', max_features='auto', max_depth=12,
+                              min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
+    xt1_bag = BaggingRegressor(base_estimator=xt1, n_estimators=10, max_samples=0.9, max_features=1.0,
+                               bootstrap=True, bootstrap_features=False)
+
+    folds = list(KFold(n_records, n_folds=n_folds, shuffle=True, random_state=1337))
+    for i, (train_out_index, eval_out_index) in enumerate(folds):
+        print('Starting fold {0}...'.format(i + 1))
+        # We'll use the current fold as the holdout set to evaluate the second-level model
+        X_out_train = X[train_out_index]
+        y_out_train = y[train_out_index]
+        X_out_eval = X[eval_out_index]
+        y_out_eval = y[eval_out_index]
+
+        y_oos = np.zeros((n_records, n_models))
+
+        print('Generating out-of-sample predictions for first-level models...')
+        for j, (train_index, eval_index) in enumerate(folds):
+            if j != i:
+                X_train = X[train_index]
+                y_train = y[train_index]
+                X_eval = X[eval_index]
+
+                rf1_bag.fit(X_train, y_train)
+                y_oos[eval_index, 0] = rf1_bag.predict(X_eval)
+
+                xt1_bag.fit(X_train, y_train)
+                y_oos[eval_index, 1] = xt1_bag.predict(X_eval)
+
+        print('Fitting second-level model...')
+        stacker = Ridge(alpha=1.0)
+        stacker.fit(y_oos[train_out_index], y_out_train)
+
+        print('Re-fitting first-level models on the training data...')
+        rf1_bag.fit(X_out_train, y_out_train)
+        xt1_bag.fit(X_out_train, y_out_train)
+
+        print('Generating predictions and scoring...')
+        training_predictions = np.zeros((X_out_train.shape[0], n_models))
+        training_predictions[:, 0] = rf1_bag.predict(X_out_train)
+        training_predictions[:, 1] = xt1_bag.predict(X_out_train)
+
+        model_train_scores[i, 0] = score(y_out_train, training_predictions[:, 0], metric)
+        model_train_scores[i, 1] = score(y_out_train, training_predictions[:, 1], metric)
+        stacker_train_scores[i] = score(y_out_train, stacker.predict(training_predictions), metric)
+
+        y_models[eval_out_index, 0] = rf1_bag.predict(X_out_eval)
+        y_models[eval_out_index, 1] = xt1_bag.predict(X_out_eval)
+
+        y_pred[eval_out_index] = stacker.predict(y_models[eval_out_index, :])
+        y_true[eval_out_index] = y_out_eval
+
+    t1 = time.time()
+    print('Ensemble training completed in {0:3f} s.'.format(t1 - t0))
+
+    print('Model 1 average training score ='), model_train_scores[:, 0].sum(axis=0) / n_folds
+    print('Model 1 eval score ='), score(y_true, y_models[:, 0], metric)
+    print('Model 2 average training score ='), model_train_scores[:, 1].sum(axis=0) / n_folds
+    print('Model 2 eval score ='), score(y_true, y_models[:, 1], metric)
+    print('Ensemble average training score ='), stacker_train_scores.sum() / n_folds
+    print('Ensemble eval score ='), score(y_true, y_pred, metric)
+
+    # show correlations between model predictions
+    df = pd.DataFrame(y_models, columns=['Model ' + str(i) for i in range(n_models)])
+    visualize_correlations(df)
+
+    if generate_preds:
+        print('TODO')
+
     return None
 
 
@@ -971,6 +1101,7 @@ def main():
     column_offset = 1
     plot_size = 16
     n_components = 2
+    n_folds = 3
 
     train_data = None
     test_data = None
@@ -1057,17 +1188,17 @@ def main():
         if ex_cross_validate:
             print('Performing cross-validation...')
             if algorithm == 'nn':
-                cross_validation_score = cross_validate_custom(X, y, model, transforms)
+                cross_validation_score = cross_validate_custom(X, y, model, transforms, n_folds)
             elif algorithm == 'xgb':
-                cross_validation_score = cross_validate_custom(X, y, model, transforms)
+                cross_validation_score = cross_validate_custom(X, y, model, transforms, n_folds)
             else:
-                cross_validation_score = cross_validate(X, y, model_type, algorithm, metric, transforms)
+                cross_validation_score = cross_validate(X, y, model_type, algorithm, metric, transforms, n_folds)
 
             print('Cross-validation score ='), cross_validation_score
 
         if ex_plot_learning_curve:
             print('Generating learning curve...')
-            plot_learning_curve(X, y, model_type, algorithm, metric, transforms)
+            plot_learning_curve(X, y, model_type, algorithm, metric, transforms, n_folds)
 
     if ex_parameter_search:
         print('Performing hyper-parameter grid search...')
@@ -1084,9 +1215,9 @@ def main():
     if ex_train_ensemble:
         print('Creating an ensemble of models...')
         if ensemble_mode == 'averaging':
-            model = train_averaged_ensemble(X, y, transforms, evaluate=True)
+            train_averaged_ensemble(X, y, metric, transforms, n_folds)
         elif ensemble_mode == 'stacking':
-            model = train_stacked_ensemble(X, y, transforms, evaluate=True)
+            train_stacked_ensemble(X, y, metric, transforms, n_folds)
         else:
             model = train_ensemble(X, y, model_type, algorithm, metric, transforms)
 
