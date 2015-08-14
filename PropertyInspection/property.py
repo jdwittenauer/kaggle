@@ -30,20 +30,17 @@ from sklearn.preprocessing import *
 from sklearn.svm import *
 
 from xgboost import *
-from keras.models import *
+from keras.callbacks import *
 from keras.layers.core import *
 from keras.layers.normalization import *
 from keras.layers.advanced_activations import *
+from keras.models import *
 from keras.optimizers import *
 
 
-# TODO - finish AllLabelEncoder
-# TODO - finish stacking ensemble code
-# TODO - keras callback to monitor validation set performance
-# TODO - keras parameter search
-# TODO - random parameter search with visualization
-# TODO - update correlation plot
-# TODO - check for compatibility with classification/regression
+# TODO - finish AllLabelEncoder class
+# TODO - update seaborn calls for 0.6 release
+# TODO - add random parameter search with visualization
 # TODO - update save/load to handle more scenarios
 
 
@@ -127,26 +124,6 @@ def save_model(model, filename):
     model_file.close()
 
 
-def predict(X, model, transforms):
-    """
-    Predicts the class label.
-    """
-    X = apply_transforms(X, transforms)
-    y_pred = model.predict(X).ravel()
-
-    return y_pred
-
-
-def predict_probability(X, model, transforms):
-    """
-    Predicts the class probabilities.
-    """
-    X = apply_transforms(X, transforms)
-    y_prob = model.predict_proba(X)
-
-    return y_prob
-
-
 def gini_score(y, y_pred):
     """
     Computes the Gini coefficient between a set of predictions and true labels.
@@ -177,6 +154,9 @@ def score(y, y_pred, metric):
     """
     Calculates a score for the given predictions using the provided metric.
     """
+    y_pred = y_pred.ravel()
+    assert y.shape == y_pred.shape
+
     if metric == 'accuracy':
         return accuracy_score(y, y_pred)
     elif metric == 'f1':
@@ -195,15 +175,14 @@ def score(y, y_pred, metric):
         return gini_score(y, y_pred)
 
 
-def predict_score(X, y, model, metric, transforms):
+def predict_score(X, y, model, metric):
     """
     Predicts and scores the model's performance and returns the result.
     """
     if metric is not None:
-        y_pred = predict(X, model, transforms)
+        y_pred = model.predict(X)
         return score(y, y_pred, metric)
     else:
-        X = apply_transforms(X, transforms)
         return model.score(X, y)
 
 
@@ -507,13 +486,71 @@ def define_nn_model(input_size):
     model.add(Dense(layer_size, output_size, init=init_method))
     model.add(Activation(activation_method))
 
-    opt = SGD(lr=0.1, momentum=0.9, decay=1e-6, nesterov=True)
-    # opt = Adagrad(lr=0.01, epsilon=1e-6)
-    # opt = Adadelta(lr=1.0, rho=0.95, epsilon=1e-6)
-    # opt = RMSprop(lr=0.001, rho=0.9, epsilon=1e-6)
-    # opt = Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=1e-8, kappa=1-1e-8)
+    optimizer = SGD(lr=0.1, momentum=0.9, decay=1e-6, nesterov=True)
+    # optimizer = Adagrad()
+    # optimizer = Adadelta()
+    # optimizer = RMSprop()
+    # optimizer = Adam()
 
-    model.compile(loss=loss_function, optimizer=opt)
+    model.compile(loss=loss_function, optimizer=optimizer)
+
+    return model
+
+
+def define_nn_model_detailed(input_size, layer_size, output_size, n_hidden_layers, init_method, loss_function,
+                             input_activation, hidden_activation, output_activation, use_batch_normalization,
+                             input_dropout, hidden_dropout, optimization_method):
+    """
+    Defines and returns a Keras neural network model.
+    """
+    model = Sequential()
+
+    # add input layer
+    model.add(Dense(input_size, layer_size, init=init_method))
+
+    if input_activation == 'prelu':
+        model.add(PReLU((layer_size,)))
+    else:
+        model.add(Activation(input_activation))
+
+    if use_batch_normalization:
+        model.add(BatchNormalization((layer_size,)))
+
+    model.add(Dropout(input_dropout))
+
+    # add hidden layers
+    for i in range(n_hidden_layers):
+        model.add(Dense(layer_size, layer_size, init=init_method))
+
+        if hidden_activation == 'prelu':
+            model.add(PReLU((layer_size,)))
+        else:
+            model.add(Activation(hidden_activation))
+
+        if use_batch_normalization:
+            model.add(BatchNormalization((layer_size,)))
+
+        model.add(Dropout(hidden_dropout))
+
+    # add output layer
+    model.add(Dense(layer_size, output_size, init=init_method))
+    model.add(Activation(output_activation))
+
+    # configure optimization method
+    if optimization_method == 'sgd':
+        optimizer = SGD(lr=0.1, momentum=0.9, decay=1e-6, nesterov=True)
+    elif optimization_method == 'adagrad':
+        optimizer = Adagrad()
+    elif optimization_method == 'adadelta':
+        optimizer = Adadelta()
+    elif optimization_method == 'rmsprop':
+        optimizer = RMSprop()
+    elif optimization_method == 'adam':
+        optimizer = Adam()
+    else:
+        raise Exception('Optimization method not recognized.')
+
+    model.compile(loss=loss_function, optimizer=optimizer)
 
     return model
 
@@ -538,7 +575,7 @@ def train_model(X, y, algorithm, model, metric, transforms, early_stopping):
         print(model.get_params())
     
         print('Calculating training score...')
-        model_score = predict_score(X, y, model, metric, transforms)
+        model_score = predict_score(X, y, model, metric)
         print('Training score ='), model_score
     
         return model
@@ -576,7 +613,7 @@ def train_xgb_model(X, y, model, metric, transforms, early_stopping):
     print(model.get_params())
 
     print('Calculating training score...')
-    model_score = predict_score(X, y, model, metric, transforms)
+    model_score = predict_score(X, y, model, metric)
     print('Training score ='), model_score
 
     return model
@@ -587,6 +624,10 @@ def train_nn_model(X, y, model, metric, transforms, early_stopping):
     Trains a new Keras model using the training data.
     """
     t0 = time.time()
+    X_train = None
+    X_eval = None
+    y_train = None
+    y_eval = None
 
     print('Beginning training...')
     if early_stopping:
@@ -594,8 +635,9 @@ def train_nn_model(X, y, model, metric, transforms, early_stopping):
         transforms = fit_transforms(X_train, transforms)
         X_train = apply_transforms(X_train, transforms)
         X_eval = apply_transforms(X_eval, transforms)
+        eval_monitor = EarlyStopping(monitor='val_loss', patience=10, verbose=1)
         history = model.fit(X_train, y_train, batch_size=128, nb_epoch=100, verbose=0,
-                            validation_data=(X_eval, y_eval), shuffle=True, callbacks=[])
+                            validation_data=(X_eval, y_eval), shuffle=True, callbacks=[eval_monitor])
     else:
         transforms = fit_transforms(X, transforms)
         X = apply_transforms(X, transforms)
@@ -612,18 +654,15 @@ def train_nn_model(X, y, model, metric, transforms, early_stopping):
 
     if early_stopping:
         print('Calculating training score...')
-        yhat_train = model.predict(X_train).ravel()
-        train_score = score(y_train, yhat_train, metric)
+        train_score = predict_score(X_train, y_train, model, metric)
         print('Training score ='), train_score
 
         print('Calculating evaluation score...')
-        yhat_eval = model.predict(X_eval).ravel()
-        eval_score = score(y_eval, yhat_eval, metric)
+        eval_score = predict_score(X_eval, y_eval, model, metric)
         print('Evaluation score ='), eval_score
     else:
         print('Calculating training score...')
-        yhat = model.predict(X).ravel()
-        train_score = score(y, yhat, metric)
+        train_score = predict_score(X, y, model, metric)
         print('Training score ='), train_score
 
     return model
@@ -805,10 +844,17 @@ def parameter_search(X, y, algorithm, model, metric, transforms, n_folds):
         print('Best score ='), grid_estimator.best_score_
 
 
-def xbg_parameter_search(X, y, metric, transforms):
+def xbg_parameter_search(X, y, metric):
     """
     Performs an exhaustive search over the specified model parameters.
     """
+    categories = []
+    # categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
+    # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
+    #               19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+    transforms = [OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False),
+                  StandardScaler()]
+
     X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
     transforms = fit_transforms(X_train, transforms)
     X_train = apply_transforms(X_train, transforms)
@@ -830,14 +876,12 @@ def xbg_parameter_search(X, y, metric, transforms):
                     print('Fitting model...')
                     model.fit(X_train, y_train, eval_set=[(X_eval, y_eval)], eval_metric='rmse',
                               early_stopping_rounds=100, verbose=False)
-                    print('Best iteration found: ' + str(model.best_iteration))
+                    print('Best iteration ='), model.best_iteration
 
-                    yhat_train = model.predict(X_train)
-                    train_score = score(y_train, yhat_train, metric)
+                    train_score = predict_score(X_train, y_train, model, metric)
                     print('Training score ='), train_score
 
-                    yhat_eval = model.predict(X_eval)
-                    eval_score = score(y_eval, yhat_eval, metric)
+                    eval_score = predict_score(X_eval, y_eval, model, metric)
                     print('Evaluation score ='), eval_score
 
                     t1 = time.time()
@@ -846,11 +890,76 @@ def xbg_parameter_search(X, y, metric, transforms):
                     print('')
 
 
-def nn_parameter_search(X, y, metric, transforms):
+def nn_parameter_search(X, y, metric):
     """
     Performs an exhaustive search over the specified model parameters.
     """
-    print('TODO')
+    categories_1 = []
+    categories_2 = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
+    categories_3 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
+                    19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+
+    transform_settings = []
+    transform_settings.append([OneHotEncoder(n_values='auto', categorical_features=categories_1, sparse=False),
+                               StandardScaler()])
+    transform_settings.append([OneHotEncoder(n_values='auto', categorical_features=categories_2, sparse=False),
+                               StandardScaler()])
+    transform_settings.append([OneHotEncoder(n_values='auto', categorical_features=categories_3, sparse=False),
+                               StandardScaler()])
+
+    init_methods = ['glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform']
+    optimization_methods = ['sgd', 'adagrad', 'adadelta', 'rmsprop', 'adam']
+    layer_sizes = [64, 128, 256, 384, 512]
+    hidden_layers = [1, 2, 3, 4]
+    batch_sizes = [16, 32, 64, 128]
+
+    for transforms in transform_settings:
+        for init_method in init_methods:
+            for optimization_method in optimization_methods:
+                for layer_size in layer_sizes:
+                    for hidden_layer in hidden_layers:
+                        for batch_size in batch_sizes:
+                            X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
+                            transforms = fit_transforms(X_train, transforms)
+                            X_train = apply_transforms(X_train, transforms)
+                            X_eval = apply_transforms(X_eval, transforms)
+
+                            t0 = time.time()
+                            print('Compiling model...')
+                            model = define_nn_model_detailed(input_size=X_train.shape[1],
+                                                             layer_size=layer_size,
+                                                             output_size=1,
+                                                             n_hidden_layers=hidden_layer,
+                                                             init_method=init_method,
+                                                             loss_function='mse',
+                                                             input_activation='prelu',
+                                                             hidden_activation='prelu',
+                                                             output_activation='linear',
+                                                             use_batch_normalization=True,
+                                                             input_dropout=0.2,
+                                                             hidden_dropout=0.5,
+                                                             optimization_method=optimization_method)
+
+                            print('Model hyper-parameters:')
+                            print(model.get_config())
+
+                            print('Fitting model...')
+                            eval_monitor = EarlyStopping(monitor='val_loss', patience=10, verbose=1)
+                            history = model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=1000, verbose=0,
+                                                validation_data=(X_eval, y_eval), shuffle=True, callbacks=[eval_monitor])
+                            print('Min eval loss ='), min(history.history['val_loss'])
+                            print('Min eval epoch ='), min(enumerate(history.history['loss']), key=lambda x: x[1])[0] + 1
+
+                            train_score = predict_score(X_train, y_train, model, metric)
+                            print('Training score ='), train_score
+
+                            eval_score = predict_score(X_eval, y_eval, model, metric)
+                            print('Evaluation score ='), eval_score
+
+                            t1 = time.time()
+                            print('Model trained in {0:3f} s.'.format(t1 - t0))
+                            print('')
+                            print('')
 
 
 def train_averaged_ensemble(X, y, X_test, metric, transforms, n_folds):
@@ -930,7 +1039,7 @@ def train_averaged_ensemble(X, y, X_test, metric, transforms, n_folds):
 
     y_avg_test = y_models_test.sum(axis=1) / n_models
 
-    print('Prediction complete.')
+    print('Ensemble complete.')
     return y_avg_test
 
 
@@ -957,6 +1066,8 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
                               min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
     xt1_bag = BaggingRegressor(base_estimator=xt1, n_estimators=10, max_samples=0.9, max_features=1.0,
                                bootstrap=True, bootstrap_features=False)
+
+    stacker = Ridge(alpha=1.0)
 
     folds = list(KFold(n_records, n_folds=n_folds, shuffle=True, random_state=1337))
     for i, (train_out_index, eval_out_index) in enumerate(folds):
@@ -986,10 +1097,9 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
                 y_oos[eval_index, 1] = xt1_bag.predict(X_eval)
 
         print('Fitting second-level model...')
-        stacker = Ridge(alpha=1.0)
         stacker.fit(y_oos[train_out_index], y_out_train)
 
-        print('Re-fitting first-level models on the training data...')
+        print('Re-fitting first-level models...')
         transforms = fit_transforms(X_out_train, transforms)
         X_out_train = apply_transforms(X_out_train, transforms)
         X_out_eval = apply_transforms(X_out_eval, transforms)
@@ -1025,9 +1135,26 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
     df = pd.DataFrame(y_models, columns=['Model ' + str(i) for i in range(n_models)])
     visualize_correlations(df)
 
-    print('TODO')
+    print('Fitting models on full data set...')
+    n_test_records = X_test.shape[0]
+    y_models_test = np.zeros((n_test_records, n_models))
 
-    return np.array([])
+    transforms = fit_transforms(X, transforms)
+    X = apply_transforms(X, transforms)
+
+    rf1_bag.fit(X, y)
+    xt1_bag.fit(X, y)
+
+    stacker.fit(y_models, y_true)
+
+    print('Generating test data predictions...')
+    y_models_test[:, 0] = rf1_bag.predict(X_test)
+    y_models_test[:, 1] = xt1_bag.predict(X_test)
+
+    y_pred_test = stacker.predict(y_models_test)
+
+    print('Ensemble complete.')
+    return y_pred_test
 
 
 def create_submission(test_data, y_pred, data_dir, submit_file):
@@ -1105,7 +1232,7 @@ def main():
                       MinMaxScaler(),
                       PCA(n_components=None, whiten=False),
                       TruncatedSVD(n_components=None),
-                      NMF(n_components=None,)
+                      NMF(n_components=None),
                       FastICA(n_components=None, whiten=True),
                       Isomap(n_components=2),
                       LocallyLinearEmbedding(n_components=2, method='modified'),
@@ -1194,7 +1321,9 @@ def main():
     if ex_create_submission:
         if not ex_train_ensemble:
             print('Predicting test data...')
-            y_pred = predict(X_test, model, transforms)
+            transforms = fit_transforms(X, transforms)
+            X_test = apply_transforms(X_test, transforms)
+            y_pred = model.predict(X_test)
 
         print('Creating submission file...')
         create_submission(test_data, y_pred, data_dir, submit_file)
