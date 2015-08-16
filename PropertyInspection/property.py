@@ -645,7 +645,7 @@ def train_nn_model(X, y, model, metric, transforms, early_stopping):
         transforms = fit_transforms(X_train, transforms)
         X_train = apply_transforms(X_train, transforms)
         X_eval = apply_transforms(X_eval, transforms)
-        history = model.fit(X_train, y_train, batch_size=128, nb_epoch=10, verbose=0,
+        history = model.fit(X_train, y_train, batch_size=128, nb_epoch=100, verbose=0,
                             validation_data=(X_eval, y_eval), shuffle=True)
     else:
         transforms = fit_transforms(X, transforms)
@@ -868,8 +868,7 @@ def xbg_parameter_search(X, y, metric):
     # categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
     # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
     #               19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
-    transforms = [OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False),
-                  StandardScaler()]
+    transforms = [OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False), StandardScaler()]
 
     X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
     transforms = fit_transforms(X_train, transforms)
@@ -910,18 +909,16 @@ def nn_parameter_search(X, y, metric):
     """
     Performs an exhaustive search over the specified model parameters.
     """
-    categories_1 = []
-    categories_2 = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
-    categories_3 = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
-                    19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+    categories = []
+    # categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
+    # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
+    #                 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
+    transforms = [OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False), StandardScaler()]
 
-    transform_settings = []
-    transform_settings.append([OneHotEncoder(n_values='auto', categorical_features=categories_1, sparse=False),
-                               StandardScaler()])
-    transform_settings.append([OneHotEncoder(n_values='auto', categorical_features=categories_2, sparse=False),
-                               StandardScaler()])
-    transform_settings.append([OneHotEncoder(n_values='auto', categorical_features=categories_3, sparse=False),
-                               StandardScaler()])
+    X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
+    transforms = fit_transforms(X_train, transforms)
+    X_train = apply_transforms(X_train, transforms)
+    X_eval = apply_transforms(X_eval, transforms)
 
     init_methods = ['glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform']
     optimization_methods = ['sgd', 'adagrad', 'adadelta', 'rmsprop', 'adam']
@@ -929,53 +926,47 @@ def nn_parameter_search(X, y, metric):
     hidden_layers = [1, 2, 3, 4]
     batch_sizes = [16, 32, 64, 128]
 
-    for transforms in transform_settings:
-        for init_method in init_methods:
-            for optimization_method in optimization_methods:
-                for layer_size in layer_sizes:
-                    for hidden_layer in hidden_layers:
-                        for batch_size in batch_sizes:
-                            X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
-                            transforms = fit_transforms(X_train, transforms)
-                            X_train = apply_transforms(X_train, transforms)
-                            X_eval = apply_transforms(X_eval, transforms)
+    for init_method in init_methods:
+        for optimization_method in optimization_methods:
+            for layer_size in layer_sizes:
+                for hidden_layer in hidden_layers:
+                    for batch_size in batch_sizes:
+                        t0 = time.time()
+                        print('Compiling model...')
+                        model = define_nn_model_detailed(input_size=X_train.shape[1],
+                                                         layer_size=layer_size,
+                                                         output_size=1,
+                                                         n_hidden_layers=hidden_layer,
+                                                         init_method=init_method,
+                                                         loss_function='mse',
+                                                         input_activation='prelu',
+                                                         hidden_activation='prelu',
+                                                         output_activation='linear',
+                                                         use_batch_normalization=True,
+                                                         input_dropout=0.2,
+                                                         hidden_dropout=0.5,
+                                                         optimization_method=optimization_method)
 
-                            t0 = time.time()
-                            print('Compiling model...')
-                            model = define_nn_model_detailed(input_size=X_train.shape[1],
-                                                             layer_size=layer_size,
-                                                             output_size=1,
-                                                             n_hidden_layers=hidden_layer,
-                                                             init_method=init_method,
-                                                             loss_function='mse',
-                                                             input_activation='prelu',
-                                                             hidden_activation='prelu',
-                                                             output_activation='linear',
-                                                             use_batch_normalization=True,
-                                                             input_dropout=0.2,
-                                                             hidden_dropout=0.5,
-                                                             optimization_method=optimization_method)
+                        print('Model hyper-parameters:')
+                        print(model.get_config())
 
-                            print('Model hyper-parameters:')
-                            print(model.get_config())
+                        print('Fitting model...')
+                        eval_monitor = EarlyStopping(monitor='val_loss', patience=10, verbose=1)
+                        history = model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=1000, verbose=0,
+                                            validation_data=(X_eval, y_eval), shuffle=True, callbacks=[eval_monitor])
+                        print('Min eval loss ='), min(history.history['val_loss'])
+                        print('Min eval epoch ='), min(enumerate(history.history['loss']), key=lambda x: x[1])[0] + 1
 
-                            print('Fitting model...')
-                            eval_monitor = EarlyStopping(monitor='val_loss', patience=10, verbose=1)
-                            history = model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=1000, verbose=0,
-                                                validation_data=(X_eval, y_eval), shuffle=True, callbacks=[eval_monitor])
-                            print('Min eval loss ='), min(history.history['val_loss'])
-                            print('Min eval epoch ='), min(enumerate(history.history['loss']), key=lambda x: x[1])[0] + 1
+                        train_score = predict_score(X_train, y_train, model, metric)
+                        print('Training score ='), train_score
 
-                            train_score = predict_score(X_train, y_train, model, metric)
-                            print('Training score ='), train_score
+                        eval_score = predict_score(X_eval, y_eval, model, metric)
+                        print('Evaluation score ='), eval_score
 
-                            eval_score = predict_score(X_eval, y_eval, model, metric)
-                            print('Evaluation score ='), eval_score
-
-                            t1 = time.time()
-                            print('Model trained in {0:3f} s.'.format(t1 - t0))
-                            print('')
-                            print('')
+                        t1 = time.time()
+                        print('Model trained in {0:3f} s.'.format(t1 - t0))
+                        print('')
+                        print('')
 
 
 def bag_of_models():
@@ -1210,7 +1201,7 @@ def main():
     ex_define_model = True
     ex_train_model = True
     ex_visualize_feature_importance = False
-    ex_cross_validate = True
+    ex_cross_validate = False
     ex_plot_learning_curve = False
     ex_parameter_search = False
     ex_train_ensemble = False
