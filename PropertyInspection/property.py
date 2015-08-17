@@ -39,6 +39,7 @@ from keras.optimizers import *
 
 
 # TODO - finish AllLabelEncoder class
+# TODO - finish FactorToNumeric class
 # TODO - update seaborn calls for 0.6 release
 # TODO - add cross-validation to parameter searches
 # TODO - add random parameter search with visualization
@@ -73,6 +74,40 @@ class AllLabelEncoder(object):
 
     def fit_transform(self):
         print('TODO')
+
+
+class FactorToNumeric(object):
+    def __init__(self, categorical_features=None, metric='mean'):
+        self.categorical_features = categorical_features
+        self.metric = metric
+        self.feature_map_ = {}
+
+    def fit(self, X, y):
+        for i in self.categorical_features:
+            self.feature_map_[i] = {}
+            distinct = list(np.unique(X[:, i]))
+            for j in distinct:
+                if self.metric == 'mean':
+                    self.feature_map_[i][j] = y[X[:, i] == j].mean()
+                elif self.metric == 'median':
+                    self.feature_map_[i][j] = y[X[:, i] == j].median()
+                elif self.metric == 'std':
+                    self.feature_map_[i][j] = y[X[:, i] == j].std()
+                else:
+                    raise Exception('Metric not not recognized.')
+
+    def transform(self, X):
+        X_trans = np.copy(X)
+        for i in self.categorical_features:
+            distinct = list(np.unique(X_trans[:, i]))
+            for j in distinct:
+                X_trans[X_trans[:, i] == j, i] = self.feature_map_[i][j]
+
+        return X_trans
+
+    def fit_transform(self, X, y):
+        self.fit(X, y)
+        return self.transform(X)
 
 
 code_dir = '/home/john/git/kaggle/PropertyInspection/'
@@ -191,9 +226,6 @@ def generate_features(data):
     """
     Generates new derived features to add to the data set for model training.
     """
-    data.drop('T1_V12', inplace=True, axis=1)
-    data.drop('T2_V12', inplace=True, axis=1)
-
     return data
 
 
@@ -220,26 +252,18 @@ def process_data(directory, train_file, test_file, label_index, column_offset, e
             X[:, i] = le.transform(X[:, i])
             X_test[:, i] = le.transform(X_test[:, i])
 
-    # # Training data for the 2nd level model
-    # stacker_train = load_csv_data(data_dir, 'stacker_train.csv')
-    # stacker_label = load_csv_data(data_dir, 'stacker_label.csv')
-    # stacker_test = load_csv_data(data_dir, 'stacker_test.csv')
-    # X = stacker_train.iloc[:, 1:].values
-    # y = stacker_label.iloc[:, 1].values
-    # X_test = stacker_test.iloc[:, 1:].values
-
     print('Data processing complete.')
 
     return train_data, test_data, X, y, X_test
 
 
-def fit_transforms(X, transforms):
+def fit_transforms(X, y, transforms):
     """
     Fits new transformations from a data set.
     """
     for i, trans in enumerate(transforms):
         if trans is not None:
-            X = trans.fit_transform(X)
+            X = trans.fit_transform(X, y)
         transforms[i] = trans
 
     return transforms
@@ -373,7 +397,7 @@ def visualize_transforms(X, y, model_type, n_components, transforms):
     """
     Generates plots to visualize the data transformed by a non-linear manifold algorithm.
     """
-    transforms = fit_transforms(X, transforms)
+    transforms = fit_transforms(X, y, transforms)
     X = apply_transforms(X, transforms)
 
     if model_type == 'classification':
@@ -397,7 +421,7 @@ def visualize_transforms(X, y, model_type, n_components, transforms):
             fig.tight_layout()
 
 
-def define_model(model_type, algorithm, input_size):
+def define_model(model_type, algorithm):
     """
     Defines and returns a model object of the designated type.
     """
@@ -426,8 +450,6 @@ def define_model(model_type, algorithm, input_size):
             model = XGBClassifier(max_depth=3, learning_rate=0.1, n_estimators=100, silent=True,
                                   objective='multi:softmax', gamma=0, min_child_weight=1, max_delta_step=0,
                                   subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
-        elif algorithm == 'nn':
-            model = define_nn_model(input_size)
         else:
             print('No model defined for ' + algorithm)
             exit()
@@ -449,11 +471,12 @@ def define_model(model_type, algorithm, input_size):
                                               min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
                                               max_leaf_nodes=None)
         elif algorithm == 'xgb':
-            model = XGBRegressor(max_depth=3, learning_rate=0.01, n_estimators=1000, silent=True,
+            # model = XGBRegressor(max_depth=3, learning_rate=0.01, n_estimators=1000, silent=True,
+            #                      objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
+            #                      subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
+            model = XGBRegressor(max_depth=7, learning_rate=0.005, n_estimators=1800, silent=True,
                                  objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
-                                 subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
-        elif algorithm == 'nn':
-            model = define_nn_model(input_size)
+                                 subsample=0.9, colsample_bytree=0.8, base_score=0.5, seed=0, missing=None)
         else:
             print('No model defined for ' + algorithm)
             exit()
@@ -461,10 +484,14 @@ def define_model(model_type, algorithm, input_size):
     return model
 
 
-def define_nn_model(input_size):
+def define_nn_model(X, y, transforms):
     """
     Defines and returns a Keras neural network model.
     """
+    transforms = fit_transforms(X, y, transforms)
+    X = apply_transforms(X, transforms)
+
+    input_size = X.shape[1]
     layer_size = 128
     output_size = 1
 
@@ -481,7 +508,7 @@ def define_nn_model(input_size):
     model.add(Dense(input_size, layer_size, init=init_method))
     model.add(PReLU((layer_size,)))
     model.add(BatchNormalization((layer_size,)))
-    model.add(Dropout(0.2))
+    model.add(Dropout(0.5))
 
     model.add(Dense(layer_size, layer_size, init=init_method))
     model.add(PReLU((layer_size,)))
@@ -496,11 +523,11 @@ def define_nn_model(input_size):
     model.add(Dense(layer_size, output_size, init=init_method))
     model.add(Activation(activation_method))
 
-    optimizer = SGD(lr=0.1, momentum=0.9, decay=1e-6, nesterov=True)
+    # optimizer = SGD(lr=0.1, momentum=0.9, decay=1e-6, nesterov=True)
     # optimizer = Adagrad()
     # optimizer = Adadelta()
     # optimizer = RMSprop()
-    # optimizer = Adam()
+    optimizer = Adam()
 
     model.compile(loss=loss_function, optimizer=optimizer)
 
@@ -575,7 +602,7 @@ def train_model(X, y, algorithm, model, metric, transforms, early_stopping):
         return train_nn_model(X, y, model, metric, transforms, early_stopping)
     else:
         t0 = time.time()
-        transforms = fit_transforms(X, transforms)
+        transforms = fit_transforms(X, y, transforms)
         X = apply_transforms(X, transforms)
         model.fit(X, y)
         t1 = time.time()
@@ -599,7 +626,7 @@ def train_xgb_model(X, y, model, metric, transforms, early_stopping):
 
     if early_stopping:
         X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
-        transforms = fit_transforms(X_train, transforms)
+        transforms = fit_transforms(X_train, y_train, transforms)
         X_train = apply_transforms(X_train, transforms)
         X_eval = apply_transforms(X_eval, transforms)
         model.fit(X_train, y_train, eval_set=[(X_eval, y_eval)], eval_metric='rmse',
@@ -608,11 +635,11 @@ def train_xgb_model(X, y, model, metric, transforms, early_stopping):
 
         print('Re-fitting at the new stopping point...')
         model.n_estimators = model.best_iteration
-        transforms = fit_transforms(X, transforms)
+        transforms = fit_transforms(X, y, transforms)
         X = apply_transforms(X, transforms)
         model.fit(X, y, verbose=False)
     else:
-        transforms = fit_transforms(X, transforms)
+        transforms = fit_transforms(X, y, transforms)
         X = apply_transforms(X, transforms)
         model.fit(X, y, verbose=False)
 
@@ -642,13 +669,13 @@ def train_nn_model(X, y, model, metric, transforms, early_stopping):
     print('Beginning training...')
     if early_stopping:
         X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
-        transforms = fit_transforms(X_train, transforms)
+        transforms = fit_transforms(X_train, y_train, transforms)
         X_train = apply_transforms(X_train, transforms)
         X_eval = apply_transforms(X_eval, transforms)
         history = model.fit(X_train, y_train, batch_size=128, nb_epoch=100, verbose=0,
                             validation_data=(X_eval, y_eval), shuffle=True)
     else:
-        transforms = fit_transforms(X, transforms)
+        transforms = fit_transforms(X, y, transforms)
         X = apply_transforms(X, transforms)
         history = model.fit(X, y, batch_size=128, nb_epoch=100, verbose=0, shuffle=True, callbacks=[])
 
@@ -715,7 +742,7 @@ def cross_validate(X, y, algorithm, model, metric, transforms, n_folds):
         X_eval = X[eval_index]
         y_eval = y[eval_index]
         
-        transforms = fit_transforms(X_train, transforms)
+        transforms = fit_transforms(X_train, y_train, transforms)
         X_train = apply_transforms(X_train, transforms)
         X_eval = apply_transforms(X_eval, transforms)
 
@@ -766,7 +793,7 @@ def sequence_cross_validate(X, y, model, metric, transforms, n_folds, strategy='
         X_train, X_eval = X[fold_start:fold_train_end, :], X[fold_train_end:fold_end, :]
         y_train, y_eval = y[fold_start:fold_train_end], y[fold_train_end:fold_end]
 
-        transforms = fit_transforms(X_train, transforms)
+        transforms = fit_transforms(X_train, y_train, transforms)
         X_train = apply_transforms(X_train, transforms)
         X_eval = apply_transforms(X_eval, transforms)
 
@@ -791,7 +818,7 @@ def plot_learning_curve(X, y, model, metric, transforms, n_folds):
     Plots a learning curve showing model performance against both training and
     validation data sets as a function of the number of training samples.
     """
-    transforms = fit_transforms(X, transforms)
+    transforms = fit_transforms(X, y, transforms)
     X = apply_transforms(X, transforms)
 
     t0 = time.time()
@@ -826,7 +853,7 @@ def parameter_search(X, y, algorithm, model, metric, transforms, n_folds):
     elif algorithm == 'nn':
         nn_parameter_search(X, y, metric)
     else:
-        transforms = fit_transforms(X, transforms)
+        transforms = fit_transforms(X, y, transforms)
         X = apply_transforms(X, transforms)
 
         param_grid = None
@@ -868,10 +895,11 @@ def xbg_parameter_search(X, y, metric):
     # categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
     # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
     #               19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
-    transforms = [OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False), StandardScaler()]
+    transforms = [OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False),
+                  StandardScaler()]
 
     X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
-    transforms = fit_transforms(X_train, transforms)
+    transforms = fit_transforms(X_train, y_train, transforms)
     X_train = apply_transforms(X_train, transforms)
     X_eval = apply_transforms(X_eval, transforms)
 
@@ -909,22 +937,26 @@ def nn_parameter_search(X, y, metric):
     """
     Performs an exhaustive search over the specified model parameters.
     """
-    categories = []
-    # categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
-    # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
-    #                 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
-    transforms = [OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False), StandardScaler()]
+    categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
+    transforms = [FactorToNumeric(categorical_features=categories, metric='mean'),
+                  StandardScaler()]
 
     X_train, X_eval, y_train, y_eval = train_test_split(X, y, test_size=0.1)
-    transforms = fit_transforms(X_train, transforms)
+    transforms = fit_transforms(X_train, y_train, transforms)
     X_train = apply_transforms(X_train, transforms)
     X_eval = apply_transforms(X_eval, transforms)
 
-    init_methods = ['glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform']
-    optimization_methods = ['sgd', 'adagrad', 'adadelta', 'rmsprop', 'adam']
+    # init_methods = ['glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform']
+    # optimization_methods = ['adagrad', 'adadelta', 'rmsprop', 'adam']
+    # layer_sizes = [64, 128, 256, 384, 512]
+    # hidden_layers = [1, 2, 3, 4]
+    # batch_sizes = [16, 32, 64, 128]
+
+    init_methods = ['glorot_uniform']
+    optimization_methods = ['adagrad', 'adadelta', 'rmsprop', 'adam']
     layer_sizes = [64, 128, 256, 384, 512]
     hidden_layers = [1, 2, 3, 4]
-    batch_sizes = [16, 32, 64, 128]
+    batch_sizes = [128]
 
     for init_method in init_methods:
         for optimization_method in optimization_methods:
@@ -943,7 +975,7 @@ def nn_parameter_search(X, y, metric):
                                                          hidden_activation='prelu',
                                                          output_activation='linear',
                                                          use_batch_normalization=True,
-                                                         input_dropout=0.2,
+                                                         input_dropout=0.5,
                                                          hidden_dropout=0.5,
                                                          optimization_method=optimization_method)
 
@@ -951,9 +983,8 @@ def nn_parameter_search(X, y, metric):
                         print(model.get_config())
 
                         print('Fitting model...')
-                        eval_monitor = EarlyStopping(monitor='val_loss', patience=10, verbose=1)
-                        history = model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=1000, verbose=0,
-                                            validation_data=(X_eval, y_eval), shuffle=True, callbacks=[eval_monitor])
+                        history = model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=400, verbose=0,
+                                            validation_data=(X_eval, y_eval), shuffle=True)
                         print('Min eval loss ='), min(history.history['val_loss'])
                         print('Min eval epoch ='), min(enumerate(history.history['loss']), key=lambda x: x[1])[0] + 1
 
@@ -1016,7 +1047,7 @@ def train_averaged_ensemble(X, y, X_test, metric, transforms, n_folds):
         X_eval = X[eval_index]
         y_eval = y[eval_index]
 
-        transforms = fit_transforms(X_train, transforms)
+        transforms = fit_transforms(X_train, y_train, transforms)
         X_train = apply_transforms(X_train, transforms)
         X_eval = apply_transforms(X_eval, transforms)
 
@@ -1049,7 +1080,7 @@ def train_averaged_ensemble(X, y, X_test, metric, transforms, n_folds):
     n_test_records = X_test.shape[0]
     y_models_test = np.zeros((n_test_records, n_models))
 
-    transforms = fit_transforms(X, transforms)
+    transforms = fit_transforms(X, y, transforms)
     X = apply_transforms(X, transforms)
     X_test = apply_transforms(X_test, transforms)
 
@@ -1099,7 +1130,7 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
                 y_train = y[train_index]
                 X_eval = X[eval_index]
 
-                transforms = fit_transforms(X_train, transforms)
+                transforms = fit_transforms(X_train, y_train, transforms)
                 X_train = apply_transforms(X_train, transforms)
                 X_eval = apply_transforms(X_eval, transforms)
 
@@ -1113,7 +1144,7 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
         stacker.fit(y_oos[train_out_index], y_out_train)
 
         print('Re-fitting first-level models...')
-        transforms = fit_transforms(X_out_train, transforms)
+        transforms = fit_transforms(X_out_train, y_out_train, transforms)
         X_out_train = apply_transforms(X_out_train, transforms)
         X_out_eval = apply_transforms(X_out_eval, transforms)
 
@@ -1152,7 +1183,7 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
     n_test_records = X_test.shape[0]
     y_models_test = np.zeros((n_test_records, n_models))
 
-    transforms = fit_transforms(X, transforms)
+    transforms = fit_transforms(X, y, transforms)
     X = apply_transforms(X, transforms)
     X_test = apply_transforms(X_test, transforms)
 
@@ -1190,7 +1221,7 @@ def experiments():
 
 def main():
     ex_process_train_data = True
-    ex_generate_features = True
+    ex_generate_features = False
     ex_load_model = False
     ex_save_model = False
     ex_visualize_variable_relationships = False
@@ -1198,12 +1229,12 @@ def main():
     ex_visualize_correlations = False
     ex_visualize_sequential_relationships = False
     ex_visualize_transforms = False
-    ex_define_model = True
-    ex_train_model = True
+    ex_define_model = False
+    ex_train_model = False
     ex_visualize_feature_importance = False
     ex_cross_validate = False
     ex_plot_learning_curve = False
-    ex_parameter_search = False
+    ex_parameter_search = True
     ex_train_ensemble = False
     ex_create_submission = False
 
@@ -1216,8 +1247,8 @@ def main():
     algorithm = 'nn'  # bayes, logistic, ridge, svm, sgd, forest, xt, boost, xgb, nn
     metric = 'gini'  # accuracy, f1, log_loss, mean_absolute_error, mean_squared_error, r2, roc_auc, 'gini'
     ensemble_mode = 'stacking'  # averaging, stacking
-    categories = []
-    # categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
+    # categories = []
+    categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
     # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
     #               19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
     early_stopping = True
@@ -1225,7 +1256,7 @@ def main():
     column_offset = 1
     plot_size = 16
     n_components = 2
-    n_folds = 3
+    n_folds = 5
 
     train_data = None
     test_data = None
@@ -1254,7 +1285,7 @@ def main():
                       TSNE(n_components=2, learning_rate=1000, n_iter=1000),
                       KMeans(n_clusters=8)]
 
-    transforms = [OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False),
+    transforms = [FactorToNumeric(categorical_features=categories, metric='mean'),
                   StandardScaler()]
 
     print('Starting process (' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ')...')
@@ -1263,7 +1294,6 @@ def main():
     print('Scoring Metric = {0}'.format(metric))
     print('Generate Features = {0}'.format(ex_generate_features))
     print('Transforms = {0}'.format(transforms))
-    print('Categorical Variables = {0}'.format(categories))
     print('Early Stopping = {0}'.format(early_stopping))
 
     if ex_process_train_data:
@@ -1274,7 +1304,7 @@ def main():
     if ex_visualize_variable_relationships:
         print('Visualizing pairwise relationships...')
         # scatter, reg, resid, kde, hex
-        visualize_variable_relationships(train_data, 'scatter', ['T1_V1', 'T1_V2'])
+        visualize_variable_relationships(train_data, 'scatter', ['Hazard', 'T1_V1'])
 
     if ex_visualize_feature_distributions:
         print('Visualizing feature distributions...')
@@ -1299,7 +1329,10 @@ def main():
     
     if ex_define_model:
         print('Building model definition...')
-        model = define_model(model_type, algorithm, X.shape[1])
+        if algorithm == 'nn':
+            model = define_nn_model(X, y, transforms)
+        else:
+            model = define_model(model_type, algorithm)
 
     if ex_train_model:
         print('Training model...')
@@ -1338,7 +1371,7 @@ def main():
     if ex_create_submission:
         if not ex_train_ensemble:
             print('Predicting test data...')
-            transforms = fit_transforms(X, transforms)
+            transforms = fit_transforms(X, y, transforms)
             X_test = apply_transforms(X_test, transforms)
             y_pred = model.predict(X_test)
 
