@@ -41,7 +41,6 @@ from keras.optimizers import *
 # TODO - finish AllLabelEncoder class
 # TODO - finish FactorToNumeric class
 # TODO - update seaborn calls for 0.6 release
-# TODO - add cross-validation to parameter searches
 # TODO - add random parameter search with visualization
 # TODO - update save/load to handle more scenarios
 
@@ -251,6 +250,14 @@ def process_data(directory, train_file, test_file, label_index, column_offset, e
             le.fit(X[:, i])
             X[:, i] = le.transform(X[:, i])
             X_test[:, i] = le.transform(X_test[:, i])
+
+    # # Training data for the 2nd level model
+    # stacker_train = load_csv_data(data_dir, 'save_stacker_train.csv')
+    # stacker_label = load_csv_data(data_dir, 'save_stacker_label.csv')
+    # stacker_test = load_csv_data(data_dir, 'save_stacker_test.csv')
+    # X = stacker_train.iloc[:, 1:4].values
+    # y = stacker_label.iloc[:, 1].values
+    # X_test = stacker_test.iloc[:, 1:4].values
 
     print('Data processing complete.')
 
@@ -474,9 +481,11 @@ def define_model(model_type, algorithm):
             # model = XGBRegressor(max_depth=3, learning_rate=0.01, n_estimators=1000, silent=True,
             #                      objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
             #                      subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
-            model = XGBRegressor(max_depth=7, learning_rate=0.005, n_estimators=1800, silent=True,
-                                 objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
-                                 subsample=0.9, colsample_bytree=0.8, base_score=0.5, seed=0, missing=None)
+            xg = XGBRegressor(max_depth=7, learning_rate=0.005, n_estimators=1800, silent=True,
+                              objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
+                              subsample=0.9, colsample_bytree=0.8, base_score=0.5, seed=0, missing=None)
+            model = BaggingRegressor(base_estimator=xg, n_estimators=10, max_samples=1.0, max_features=1.0,
+                                     bootstrap=True, bootstrap_features=False)
         else:
             print('No model defined for ' + algorithm)
             exit()
@@ -515,19 +524,14 @@ def define_nn_model(X, y, transforms):
     model.add(BatchNormalization((layer_size,)))
     model.add(Dropout(0.5))
 
-    model.add(Dense(layer_size, layer_size, init=init_method))
-    model.add(PReLU((layer_size,)))
-    model.add(BatchNormalization((layer_size,)))
-    model.add(Dropout(0.5))
-
     model.add(Dense(layer_size, output_size, init=init_method))
     model.add(Activation(activation_method))
 
-    # optimizer = SGD(lr=0.1, momentum=0.9, decay=1e-6, nesterov=True)
+    optimizer = SGD(lr=0.1, momentum=0.9, decay=1e-6, nesterov=True)
     # optimizer = Adagrad()
     # optimizer = Adadelta()
     # optimizer = RMSprop()
-    optimizer = Adam()
+    # optimizer = Adam()
 
     model.compile(loss=loss_function, optimizer=optimizer)
 
@@ -630,18 +634,18 @@ def train_xgb_model(X, y, model, metric, transforms, early_stopping):
         X_train = apply_transforms(X_train, transforms)
         X_eval = apply_transforms(X_eval, transforms)
         model.fit(X_train, y_train, eval_set=[(X_eval, y_eval)], eval_metric='rmse',
-                  early_stopping_rounds=100, verbose=False)
+                  early_stopping_rounds=100)
         print('Best iteration found: ' + str(model.best_iteration))
 
         print('Re-fitting at the new stopping point...')
         model.n_estimators = model.best_iteration
         transforms = fit_transforms(X, y, transforms)
         X = apply_transforms(X, transforms)
-        model.fit(X, y, verbose=False)
+        model.fit(X, y)
     else:
         transforms = fit_transforms(X, y, transforms)
         X = apply_transforms(X, transforms)
-        model.fit(X, y, verbose=False)
+        model.fit(X, y)
 
     t1 = time.time()
     print('Model trained in {0:3f} s.'.format(t1 - t0))
@@ -672,6 +676,9 @@ def train_nn_model(X, y, model, metric, transforms, early_stopping):
         transforms = fit_transforms(X_train, y_train, transforms)
         X_train = apply_transforms(X_train, transforms)
         X_eval = apply_transforms(X_eval, transforms)
+        # eval_monitor = EarlyStopping(monitor='val_loss', patience=10, verbose=0)
+        # history = model.fit(X_train, y_train, batch_size=128, nb_epoch=100, verbose=0,
+        #                     validation_data=(X_eval, y_eval), shuffle=True, callbacks=[eval_monitor])
         history = model.fit(X_train, y_train, batch_size=128, nb_epoch=100, verbose=0,
                             validation_data=(X_eval, y_eval), shuffle=True)
     else:
@@ -701,7 +708,7 @@ def train_nn_model(X, y, model, metric, transforms, early_stopping):
         train_score = predict_score(X, y, model, metric)
         print('Training score ='), train_score
 
-    return model
+    return model, history
 
 
 def visualize_feature_importance(train_data, model, column_offset):
@@ -712,7 +719,7 @@ def visualize_feature_importance(train_data, model, column_offset):
     """
     importance = model.feature_importances_
     importance = 100.0 * (importance / importance.max())
-    importance = importance[0:40] if len(train_data.columns) > 40 else importance
+    importance = importance[0:30] if len(train_data.columns) > 30 else importance
     sorted_idx = np.argsort(importance)
     pos = np.arange(sorted_idx.shape[0])
 
@@ -750,8 +757,6 @@ def cross_validate(X, y, algorithm, model, metric, transforms, n_folds):
             model.fit(X_train, y_train, batch_size=128, nb_epoch=100, verbose=0,
                       validation_data=(X_eval, y_eval), shuffle=True)
         elif algorithm == 'xgb':
-            model.fit(X_train, y_train, verbose=False)
-        else:
             model.fit(X_train, y_train)
 
         y_pred = np.append(y_pred, model.predict(X_eval))
@@ -913,6 +918,11 @@ def xbg_parameter_search(X, y, metric):
                                          max_delta_step=0, subsample=subsample, colsample_bytree=colsample_bytree,
                                          base_score=0.5, seed=0, missing=None)
 
+                    print('subsample ='), subsample
+                    print('colsample_bytree ='), colsample_bytree
+                    print('max_depth ='), max_depth
+                    print('min_child_weight ='), min_child_weight
+
                     print('Model hyper-parameters:')
                     print(model.get_params())
 
@@ -952,9 +962,15 @@ def nn_parameter_search(X, y, metric):
     # hidden_layers = [1, 2, 3, 4]
     # batch_sizes = [16, 32, 64, 128]
 
+    # init_methods = ['glorot_uniform']
+    # optimization_methods = ['adadelta', 'rmsprop']
+    # layer_sizes = [64, 128, 192]
+    # hidden_layers = [1, 2, 3, 4]
+    # batch_sizes = [128]
+
     init_methods = ['glorot_uniform']
-    optimization_methods = ['adagrad', 'adadelta', 'rmsprop', 'adam']
-    layer_sizes = [64, 128, 256, 384, 512]
+    optimization_methods = ['adadelta']
+    layer_sizes = [64, 128, 256]
     hidden_layers = [1, 2, 3, 4]
     batch_sizes = [128]
 
@@ -979,11 +995,20 @@ def nn_parameter_search(X, y, metric):
                                                          hidden_dropout=0.5,
                                                          optimization_method=optimization_method)
 
+                        print('init_method ='), init_method
+                        print('optimization_method ='), optimization_method
+                        print('layer_size ='), layer_size
+                        print('hidden_layer ='), hidden_layer
+                        print('batch_size ='), batch_size
+
                         print('Model hyper-parameters:')
                         print(model.get_config())
 
                         print('Fitting model...')
-                        history = model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=400, verbose=0,
+                        # eval_monitor = EarlyStopping(monitor='val_loss', patience=100, verbose=0)
+                        # history = model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=1000, verbose=0,
+                        #                     validation_data=(X_eval, y_eval), shuffle=True, callbacks=[eval_monitor])
+                        history = model.fit(X_train, y_train, batch_size=batch_size, nb_epoch=1000, verbose=0,
                                             validation_data=(X_eval, y_eval), shuffle=True)
                         print('Min eval loss ='), min(history.history['val_loss'])
                         print('Min eval epoch ='), min(enumerate(history.history['loss']), key=lambda x: x[1])[0] + 1
@@ -1000,7 +1025,7 @@ def nn_parameter_search(X, y, metric):
                         print('')
 
 
-def bag_of_models():
+def bag_of_models(input_size):
     """
     Defines the set of models used in the ensemble.
     """
@@ -1022,6 +1047,36 @@ def bag_of_models():
     models.append(BaggingRegressor(base_estimator=xg2, n_estimators=10, max_samples=1.0, max_features=1.0,
                                    bootstrap=True, bootstrap_features=False))
 
+    nn1 = define_nn_model_detailed(input_size=input_size,
+                                   layer_size=64,
+                                   output_size=1,
+                                   n_hidden_layers=1,
+                                   init_method='glorot_uniform',
+                                   loss_function='mse',
+                                   input_activation='prelu',
+                                   hidden_activation='prelu',
+                                   output_activation='linear',
+                                   use_batch_normalization=True,
+                                   input_dropout=0.5,
+                                   hidden_dropout=0.5,
+                                   optimization_method='adadelta')
+    models.append(nn1)
+
+    nn2 = define_nn_model_detailed(input_size=input_size,
+                                   layer_size=128,
+                                   output_size=1,
+                                   n_hidden_layers=3,
+                                   init_method='glorot_uniform',
+                                   loss_function='mse',
+                                   input_activation='prelu',
+                                   hidden_activation='prelu',
+                                   output_activation='linear',
+                                   use_batch_normalization=True,
+                                   input_dropout=0.5,
+                                   hidden_dropout=0.75,
+                                   optimization_method='adadelta')
+    models.append(nn2)
+
     return models
 
 
@@ -1030,7 +1085,7 @@ def train_averaged_ensemble(X, y, X_test, metric, transforms, n_folds):
     Creates an averaged ensemble of many models together.
     """
     t0 = time.time()
-    models = bag_of_models()
+    models = bag_of_models(X.shape[1])
     n_models = len(models)
     n_records = y.shape[0]
 
@@ -1058,8 +1113,6 @@ def train_averaged_ensemble(X, y, X_test, metric, transforms, n_folds):
         print('Generating predictions and scoring...')
         for k, model in enumerate(models):
             model_train_scores[i, k] = score(y_train, model.predict(X_train), metric)
-
-        for k, model in enumerate(models):
             y_models[eval_index, k] = model.predict(X_eval)
 
         y_avg[eval_index] = y_models[eval_index, :].sum(axis=1) / n_models
@@ -1102,7 +1155,7 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
     Creates a stacked ensemble of many models together.
     """
     t0 = time.time()
-    models = bag_of_models()
+    models = bag_of_models(X.shape[1])
     stacker = Ridge()
     n_models = len(models)
     n_records = y.shape[0]
@@ -1135,10 +1188,15 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
                 X_eval = apply_transforms(X_eval, transforms)
 
                 for k, model in enumerate(models):
-                    model.fit(X_train, y_train)
+                    if k < 3:
+                        model.fit(X_train, y_train)
+                    elif k == 3:
+                        model.fit(X_train, y_train, batch_size=128, nb_epoch=400, verbose=0, shuffle=True)
+                    else:
+                        model.fit(X_train, y_train, batch_size=128, nb_epoch=1000, verbose=0, shuffle=True)
 
                 for k, model in enumerate(models):
-                    y_oos[eval_index, k] = model.predict(X_eval)
+                    y_oos[eval_index, k] = model.predict(X_eval).ravel()
 
         print('Fitting second-level model...')
         stacker.fit(y_oos[train_out_index], y_out_train)
@@ -1149,20 +1207,24 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
         X_out_eval = apply_transforms(X_out_eval, transforms)
 
         for k, model in enumerate(models):
-            model.fit(X_out_train, y_out_train)
+            if k < 3:
+                model.fit(X_out_train, y_out_train)
+            elif k == 3:
+                model.fit(X_out_train, y_out_train, batch_size=128, nb_epoch=400, verbose=0, shuffle=True)
+            else:
+                model.fit(X_out_train, y_out_train, batch_size=128, nb_epoch=1000, verbose=0, shuffle=True)
 
         print('Generating predictions and scoring...')
         training_predictions = np.zeros((X_out_train.shape[0], n_models))
 
         for k, model in enumerate(models):
-            training_predictions[:, k] = model.predict(X_out_train)
+            training_predictions[:, k] = model.predict(X_out_train).ravel()
+            model_train_scores[i, k] = score(y_out_train, training_predictions[:, k], metric)
 
-        for k, model in enumerate(models):
-            model_train_scores[i, k] = score(y_out_train, training_predictions[:, 0], metric)
         stacker_train_scores[i] = score(y_out_train, stacker.predict(training_predictions), metric)
 
         for k, model in enumerate(models):
-            y_models[eval_out_index, k] = model.predict(X_out_eval)
+            y_models[eval_out_index, k] = model.predict(X_out_eval).ravel()
 
         y_pred[eval_out_index] = stacker.predict(y_models[eval_out_index, :])
         y_true[eval_out_index] = y_out_eval
@@ -1188,13 +1250,18 @@ def train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds):
     X_test = apply_transforms(X_test, transforms)
 
     for k, model in enumerate(models):
-        model.fit(X, y)
+        if k < 3:
+            model.fit(X, y)
+        elif k == 3:
+            model.fit(X, y, batch_size=128, nb_epoch=400, verbose=0, shuffle=True)
+        else:
+            model.fit(X, y, batch_size=128, nb_epoch=1000, verbose=0, shuffle=True)
 
     stacker.fit(y_models, y_true)
 
     print('Generating test data predictions...')
     for k, model in enumerate(models):
-        y_models_test[:, k] = model.predict(X_test)
+        y_models_test[:, k] = model.predict(X_test).ravel()
 
     y_pred_test = stacker.predict(y_models_test)
 
@@ -1229,14 +1296,14 @@ def main():
     ex_visualize_correlations = False
     ex_visualize_sequential_relationships = False
     ex_visualize_transforms = False
-    ex_define_model = False
-    ex_train_model = False
+    ex_define_model = True
+    ex_train_model = True
     ex_visualize_feature_importance = False
-    ex_cross_validate = False
+    ex_cross_validate = True
     ex_plot_learning_curve = False
-    ex_parameter_search = True
+    ex_parameter_search = False
     ex_train_ensemble = False
-    ex_create_submission = False
+    ex_create_submission = True
 
     train_file = 'train.csv'
     test_file = 'test.csv'
@@ -1244,14 +1311,14 @@ def main():
     model_file = 'model.pkl'
 
     model_type = 'regression'  # classification, regression
-    algorithm = 'nn'  # bayes, logistic, ridge, svm, sgd, forest, xt, boost, xgb, nn
+    algorithm = 'xgb'  # bayes, logistic, ridge, svm, sgd, forest, xt, boost, xgb, nn
     metric = 'gini'  # accuracy, f1, log_loss, mean_absolute_error, mean_squared_error, r2, roc_auc, 'gini'
     ensemble_mode = 'stacking'  # averaging, stacking
     # categories = []
     categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
     # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
     #               19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
-    early_stopping = True
+    early_stopping = False
     label_index = 0
     column_offset = 1
     plot_size = 16
@@ -1336,7 +1403,10 @@ def main():
 
     if ex_train_model:
         print('Training model...')
-        model = train_model(X, y, algorithm, model, metric, transforms, early_stopping)
+        if algorithm == 'nn':
+            model, history = train_model(X, y, algorithm, model, metric, transforms, early_stopping)
+        else:
+            model = train_model(X, y, algorithm, model, metric, transforms, early_stopping)
 
         if ex_visualize_feature_importance and algorithm in ['forest', 'xt', 'boost']:
             print('Generating feature importance plot...')
