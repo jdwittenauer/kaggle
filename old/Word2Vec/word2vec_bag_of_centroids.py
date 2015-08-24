@@ -20,7 +20,7 @@ import pandas as pd
 from gensim.models import Word2Vec
 from sklearn.cluster import KMeans
 from sklearn.ensemble import RandomForestClassifier
-from kaggle_utility import KaggleUtility
+from old.Word2Vec.kaggle_utility import KaggleUtility
 
 
 def create_bag_of_centroids(wordlist, word_centroid_map):

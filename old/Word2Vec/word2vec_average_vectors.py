@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 from gensim.models import Word2Vec
 from sklearn.ensemble import RandomForestClassifier
-from kaggle_utility import KaggleUtility
+from old.Word2Vec.kaggle_utility import KaggleUtility
 
 
 def make_feature_vec(words, model, num_features):
