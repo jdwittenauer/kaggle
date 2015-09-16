@@ -38,13 +38,6 @@ from keras.models import *
 from keras.optimizers import *
 
 
-# TODO - finish AllLabelEncoder class
-# TODO - finish FactorToNumeric class
-# TODO - update seaborn calls for 0.6 release
-# TODO - add random parameter search with visualization
-# TODO - update save/load to handle more scenarios
-
-
 class Logger(object):
     def __init__(self, path):
         self.terminal = sys.stdout

@@ -7,16 +7,12 @@ import sys
 import pandas as pd
 from datetime import datetime
 
-from sklearn.cluster import *
-from sklearn.decomposition import *
-from sklearn.ensemble import *
-from sklearn.feature_extraction import *
-from sklearn.feature_selection import *
-from sklearn.linear_model import *
-from sklearn.manifold import *
-from sklearn.naive_bayes import *
-from sklearn.preprocessing import *
-from sklearn.svm import *
+from ionyx.utils import *
+from ionyx.ensemble import *
+from ionyx.experiment import *
+from ionyx.visualization import *
+
+from common import *
 
 
 code_dir = 'C:\\Users\\John\\Documents\\Git\\kaggle\\'
@@ -24,8 +20,6 @@ data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\Property Inspection\\'
 os.chdir(code_dir)
 logger = Logger(data_dir + 'output.txt')
 sys.stdout = logger
-# sys.stdout = logger.terminal
-# logger.close()
 
 
 def generate_features(data):
@@ -63,82 +57,11 @@ def process_data(directory, train_file, test_file, label_index, column_offset, e
     return train_data, test_data, X, y, X_test
 
 
-def define_model(model_type, algorithm):
-    """
-    Defines and returns a model object of the designated type.
-    """
-    model = None
-
-    if model_type == 'classification':
-        if algorithm == 'bayes':
-            model = GaussianNB()
-        elif algorithm == 'logistic':
-            model = LogisticRegression(penalty='l2', C=1.0)
-        elif algorithm == 'svm':
-            model = SVC(C=1.0, kernel='rbf', shrinking=True, probability=False, cache_size=200)
-        elif algorithm == 'sgd':
-            model = SGDClassifier(loss='hinge', penalty='l2', alpha=0.0001, n_iter=1000, shuffle=False, n_jobs=-1)
-        elif algorithm == 'forest':
-            model = RandomForestClassifier(n_estimators=10, criterion='gini', max_features='auto', max_depth=None,
-                                           min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
-        elif algorithm == 'xt':
-            model = ExtraTreesClassifier(n_estimators=10, criterion='gini', max_features='auto', max_depth=None,
-                                         min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
-        elif algorithm == 'boost':
-            model = GradientBoostingClassifier(loss='deviance', learning_rate=0.1, n_estimators=100, subsample=1.0,
-                                               min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
-                                               max_leaf_nodes=None)
-        elif algorithm == 'xgb':
-            model = XGBClassifier(max_depth=3, learning_rate=0.1, n_estimators=100, silent=True,
-                                  objective='multi:softmax', gamma=0, min_child_weight=1, max_delta_step=0,
-                                  subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
-        else:
-            print('No model defined for ' + algorithm)
-            exit()
-    else:
-        if algorithm == 'ridge':
-            model = Ridge(alpha=1.0)
-        elif algorithm == 'svm':
-            model = SVR(C=1.0, kernel='rbf', shrinking=True, cache_size=200)
-        elif algorithm == 'sgd':
-            model = SGDRegressor(loss='squared_loss', penalty='l2', alpha=0.0001, n_iter=1000, shuffle=False)
-        elif algorithm == 'forest':
-            model = RandomForestRegressor(n_estimators=10, criterion='mse', max_features='auto', max_depth=None,
-                                          min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
-        elif algorithm == 'xt':
-            model = ExtraTreesRegressor(n_estimators=10, criterion='mse', max_features='auto', max_depth=None,
-                                        min_samples_split=2, min_samples_leaf=1, max_leaf_nodes=None, n_jobs=-1)
-        elif algorithm == 'boost':
-            model = GradientBoostingRegressor(loss='ls', learning_rate=0.1, n_estimators=100, subsample=1.0,
-                                              min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
-                                              max_leaf_nodes=None)
-        elif algorithm == 'xgb':
-            # model = XGBRegressor(max_depth=3, learning_rate=0.01, n_estimators=1000, silent=True,
-            #                      objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
-            #                      subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
-            xg = XGBRegressor(max_depth=7, learning_rate=0.005, n_estimators=1800, silent=True,
-                              objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
-                              subsample=0.9, colsample_bytree=0.8, base_score=0.5, seed=0, missing=None)
-            model = BaggingRegressor(base_estimator=xg, n_estimators=10, max_samples=1.0, max_features=1.0,
-                                     bootstrap=True, bootstrap_features=False)
-        else:
-            print('No model defined for ' + algorithm)
-            exit()
-
-    return model
-
-
 def bag_of_models():
     """
     Defines the set of models used in the ensemble.
     """
     models = []
-
-    rf1 = RandomForestRegressor(n_estimators=100, criterion='mse', max_features='auto', max_depth=12,
-                                min_samples_split=20, min_samples_leaf=10, max_leaf_nodes=None, n_jobs=-1)
-    models.append(BaggingRegressor(base_estimator=rf1, n_estimators=10, max_samples=1.0, max_features=1.0,
-                                   bootstrap=True, bootstrap_features=False))
-
     return models
 
 
@@ -178,13 +101,9 @@ def main():
     model_file = 'model.pkl'
 
     model_type = 'regression'  # classification, regression
-    algorithm = 'xgb'  # bayes, logistic, ridge, svm, sgd, forest, xt, boost, xgb, nn
-    metric = 'gini'  # accuracy, f1, log_loss, mean_absolute_error, mean_squared_error, r2, roc_auc, 'gini'
+    algorithm = 'ridge'  # bayes, logistic, ridge, svm, sgd, forest, xt, boost, xgb, nn
+    metric = 'mean_squared_error'  # accuracy, f1, log_loss, mean_absolute_error, mean_squared_error, r2, roc_auc
     ensemble_mode = 'stacking'  # averaging, stacking
-    # categories = []
-    categories = [3, 4, 5, 6, 7, 8, 10, 11, 14, 15, 16, 19, 21, 27, 28, 29]
-    # categories = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18,
-    #               19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30]
     early_stopping = False
     label_index = 0
     column_offset = 1
@@ -200,27 +119,7 @@ def main():
     y_pred = None
     model = None
 
-    all_transforms = [Imputer(missing_values='NaN', strategy='mean', axis=0),
-                      LabelEncoder(),
-                      OneHotEncoder(n_values='auto', categorical_features=categories, sparse=False),
-                      DictVectorizer(sparse=False),
-                      FeatureHasher(n_features=1048576, input_type='dict'),
-                      VarianceThreshold(threshold=0.0),
-                      Binarizer(threshold=0.0),
-                      StandardScaler(),
-                      MinMaxScaler(),
-                      PCA(n_components=None, whiten=False),
-                      TruncatedSVD(n_components=None),
-                      NMF(n_components=None),
-                      FastICA(n_components=None, whiten=True),
-                      Isomap(n_components=2),
-                      LocallyLinearEmbedding(n_components=2, method='modified'),
-                      MDS(n_components=2),
-                      TSNE(n_components=2, learning_rate=1000, n_iter=1000),
-                      KMeans(n_clusters=8)]
-
-    transforms = [FactorToNumeric(categorical_features=categories, metric='mean'),
-                  StandardScaler()]
+    transforms = [StandardScaler()]
 
     print('Starting process (' + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + ')...')
     print('Model Type = {0}'.format(model_type))
