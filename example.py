@@ -1,7 +1,3 @@
-"""
-@author: John Wittenauer
-"""
-
 import os
 import sys
 import pandas as pd
@@ -104,7 +100,11 @@ def main():
     algorithm = 'ridge'  # bayes, logistic, ridge, svm, sgd, forest, xt, boost, xgb, nn
     metric = 'mean_squared_error'  # accuracy, f1, log_loss, mean_absolute_error, mean_squared_error, r2, roc_auc
     ensemble_mode = 'stacking'  # averaging, stacking
+
+    eval = False
+    plot_eval_history = False
     early_stopping = False
+    early_stopping_rounds = 10
     label_index = 0
     column_offset = 1
     plot_size = 16
@@ -127,7 +127,6 @@ def main():
     print('Scoring Metric = {0}'.format(metric))
     print('Generate Features = {0}'.format(ex_generate_features))
     print('Transforms = {0}'.format(transforms))
-    print('Early Stopping = {0}'.format(early_stopping))
 
     if ex_process_train_data:
         print('Reading in and processing data files...')
@@ -162,17 +161,12 @@ def main():
 
     if ex_define_model:
         print('Building model definition...')
-        if algorithm == 'nn':
-            model = define_nn_model(X, y, transforms)
-        else:
-            model = define_model(model_type, algorithm)
+        model = define_model(model_type, algorithm)
 
     if ex_train_model:
         print('Training model...')
-        if algorithm == 'nn':
-            model, history = train_model(X, y, algorithm, model, metric, transforms, early_stopping)
-        else:
-            model = train_model(X, y, algorithm, model, metric, transforms, early_stopping)
+        model, training_history = train_model(X, y, model, model_type, metric, transforms, eval, plot_eval_history,
+                                              early_stopping, early_stopping_rounds)
 
         if ex_visualize_feature_importance and algorithm in ['forest', 'xt', 'boost']:
             print('Generating feature importance plot...')
@@ -180,7 +174,7 @@ def main():
 
         if ex_cross_validate:
             print('Performing cross-validation...')
-            cross_validate(X, y, algorithm, model, metric, transforms, n_folds)
+            cross_validate(X, y, model, metric, transforms, n_folds)
 
         if ex_plot_learning_curve:
             print('Generating learning curve...')
@@ -192,7 +186,7 @@ def main():
 
     if ex_parameter_search:
         print('Performing hyper-parameter grid search...')
-        parameter_search(X, y, algorithm, model, metric, transforms, n_folds)
+        parameter_grid_search(X, y, model, metric, [transforms], get_param_grid(algorithm))
 
     if ex_train_ensemble:
         print('Creating an ensemble of models...')
