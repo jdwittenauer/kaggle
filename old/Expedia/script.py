@@ -5,16 +5,16 @@ import operator
 
 
 def apk(actual, predicted, k=10):
-    if len(predicted)>k:
+    if len(predicted) > k:
         predicted = predicted[:k]
 
     score = 0.0
     num_hits = 0.0
 
-    for i,p in enumerate(predicted):
+    for i, p in enumerate(predicted):
         if p in actual and p not in predicted[:i]:
             num_hits += 1.0
-            score += num_hits / (i+1.0)
+            score += num_hits / (i + 1.0)
 
     if not actual:
         return 0.0
@@ -23,7 +23,7 @@ def apk(actual, predicted, k=10):
 
 
 def mapk(actual, predicted, k=10):
-    return np.mean([apk(a,p,k) for a,p in zip(actual, predicted)])
+    return np.mean([apk(a, p ,k) for a, p in zip(actual, predicted)])
 
 
 def make_key(items):
@@ -57,9 +57,9 @@ def f5(seq, idfun=None):
     return result
 
 
-def generate_submission(data_dir, preds, t2):
+def generate_submission(data_dir, preds, test):
     write_p = [' '.join([str(l) for l in p]) for p in preds]
-    write_frame = ['{0},{1}'.format(t2['id'].iloc[i], write_p[i]) for i in range(len(preds))]
+    write_frame = ['{0},{1}'.format(test['id'].iloc[i], write_p[i]) for i in range(len(preds))]
     write_frame = ['id,hotel_cluster'] + write_frame
 
     with open(data_dir + 'predictions.csv', 'w+') as f:
@@ -161,9 +161,6 @@ for index, row in t2.iterrows():
         preds.append(cluster_dict[key])
     else:
         preds.append([])
-
-# evaluate the accuracy of this solution
-print('Score = ' + str(mapk([[l] for l in t2['hotel_cluster']], preds, k=5)))
 
 print('Generating second set of predictions...')
 
