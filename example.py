@@ -1,4 +1,3 @@
-import os
 import sys
 import pandas as pd
 from datetime import datetime
@@ -11,9 +10,7 @@ from ionyx.visualization import *
 from common import *
 
 
-code_dir = 'C:\\Users\\John\\Documents\\Git\\kaggle\\'
-data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\Property Inspection\\'
-os.chdir(code_dir)
+data_dir = 'C:\\Users\\jdwittenauer\\Documents\\Data\\Property Inspection\\'
 logger = Logger(data_dir + 'output.txt')
 sys.stdout = logger
 
@@ -191,9 +188,10 @@ def main():
     if ex_train_ensemble:
         print('Creating an ensemble of models...')
         if ensemble_mode == 'averaging':
-            y_pred = train_averaged_ensemble(X, y, X_test, metric, transforms, n_folds)
+            y_pred = train_averaged_ensemble(X, y, X_test, bag_of_models(), metric, transforms, n_folds)
         else:
-            y_models, y_true, y_models_test, y_pred = train_stacked_ensemble(X, y, X_test, metric, transforms, n_folds)
+            y_models, y_true, y_models_test, y_pred = train_stacked_ensemble(X, y, X_test, bag_of_models(),
+                                                                             metric, transforms, n_folds)
             pd.DataFrame(y_models).to_csv(data_dir + 'stacker_train.csv')
             pd.DataFrame(y_true).to_csv(data_dir + 'stacker_label.csv')
             pd.DataFrame(y_models_test).to_csv(data_dir + 'stacker_test.csv')
