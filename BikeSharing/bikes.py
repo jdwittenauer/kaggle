@@ -606,8 +606,8 @@ def main():
     ex_train_ensemble = False
     ex_create_submission = False
 
-    code_dir = '/home/git/kaggle/BikeSharing/'
-    data_dir = '/home/data/bike-sharing/'
+    code_dir = '/home/john/git/kaggle/BikeSharing/'
+    data_dir = '/home/john/data/bike-sharing/'
     training_file = 'train.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'

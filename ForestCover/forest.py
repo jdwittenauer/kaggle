@@ -411,8 +411,8 @@ def main():
     save_model = False
     create_submission_file = False
 
-    code_dir = '/home/git/kaggle/ForestCover/'
-    data_dir = '/home/data/forest-cover/'
+    code_dir = '/home/john/git/kaggle/ForestCover/'
+    data_dir = '/home/john/data/forest-cover/'
     training_file = 'train.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'

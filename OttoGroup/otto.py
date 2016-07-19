@@ -176,8 +176,8 @@ def make_submission(y_prob, ids, encoder, path, filename):
 
 
 def main():
-    code_dir = '/home/git/kaggle/OttoGroup/'
-    data_dir = '/home/data/otto-group/'
+    code_dir = '/home/john/git/kaggle/OttoGroup/'
+    data_dir = '/home/john/data/otto-group/'
     training_file = 'train.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'

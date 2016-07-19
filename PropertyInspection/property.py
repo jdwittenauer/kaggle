@@ -93,8 +93,8 @@ class FactorToNumeric(object):
         return self.transform(X)
 
 
-code_dir = '/home/git/kaggle/PropertyInspection/'
-data_dir = '/home/data/property-inspection/'
+code_dir = '/home/john/git/kaggle/PropertyInspection/'
+data_dir = '/home/john/data/property-inspection/'
 os.chdir(code_dir)
 logger = Logger(data_dir + 'output.txt')
 sys.stdout = logger

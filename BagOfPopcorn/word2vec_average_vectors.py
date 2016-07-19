@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/git/kaggle/BagOfPopcorn/')
+sys.path.append('/home/john/git/kaggle/BagOfPopcorn/')
 
 import logging
 import nltk.data
@@ -67,7 +67,7 @@ def get_clean_reviews(reviews):
 
 
 def main():
-    data_dir = '/home/data/bag-of-popcorn/'
+    data_dir = '/home/john/data/bag-of-popcorn/'
 
     # Read data from files
     train = pd.read_csv(data_dir + 'labeledTrainData.tsv', header=0, delimiter='\t', quoting=3)

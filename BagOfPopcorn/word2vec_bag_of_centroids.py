@@ -1,5 +1,5 @@
 import sys
-sys.path.append('/home/git/kaggle/BagOfPopcorn/')
+sys.path.append('/home/john/git/kaggle/BagOfPopcorn/')
 
 import time
 import numpy as np
@@ -31,7 +31,7 @@ def create_bag_of_centroids(wordlist, word_centroid_map):
 
 
 def main():
-    data_dir = '/home/data/bag-of-popcorn/'
+    data_dir = '/home/john/data/bag-of-popcorn/'
     model = Word2Vec.load(data_dir + '300features_40minwords_10context')
 
     # Run k-means on the word vectors and print a few clusters
