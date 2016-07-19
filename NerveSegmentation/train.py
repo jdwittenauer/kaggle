@@ -1,13 +1,17 @@
 from __future__ import print_function
+import sys
+sys.path.append('/home/john/git/kaggle/NerveSegmentation/')
+
 import cv2
 import numpy as np
 from keras.models import Model
 from keras.layers import Input, merge, Convolution2D, MaxPooling2D, UpSampling2D
 from keras.optimizers import Adam
-from keras.callbacks import ModelCheckpoint, LearningRateScheduler
+from keras.callbacks import ModelCheckpoint
 from keras import backend as K
 from data import load_train_data, load_test_data
 
+data_path = '/home/john/data/nerve-segmentation/'
 img_rows = 64
 img_cols = 80
 smooth = 1.
@@ -78,9 +82,7 @@ def preprocess(imgs):
 
 
 def train_and_predict():
-    print('-'*30)
     print('Loading and preprocessing train data...')
-    print('-'*30)
     imgs_train, imgs_mask_train = load_train_data()
 
     imgs_train = preprocess(imgs_train)
@@ -96,21 +98,15 @@ def train_and_predict():
     imgs_mask_train = imgs_mask_train.astype('float32')
     imgs_mask_train /= 255.  # scale masks to [0, 1]
 
-    print('-'*30)
     print('Creating and compiling model...')
-    print('-'*30)
     model = get_unet()
-    model_checkpoint = ModelCheckpoint('unet.hdf5', monitor='loss', save_best_only=True)
+    model_checkpoint = ModelCheckpoint(data_path + 'unet.hdf5', monitor='loss', save_best_only=True)
 
-    print('-'*30)
     print('Fitting model...')
-    print('-'*30)
     model.fit(imgs_train, imgs_mask_train, batch_size=32, nb_epoch=20, verbose=1, shuffle=True,
               callbacks=[model_checkpoint])
 
-    print('-'*30)
     print('Loading and preprocessing test data...')
-    print('-'*30)
     imgs_test, imgs_id_test = load_test_data()
     imgs_test = preprocess(imgs_test)
 
@@ -118,17 +114,14 @@ def train_and_predict():
     imgs_test -= mean
     imgs_test /= std
 
-    print('-'*30)
     print('Loading saved weights...')
-    print('-'*30)
-    model.load_weights('unet.hdf5')
+    model.load_weights(data_path + 'unet.hdf5')
 
-    print('-'*30)
     print('Predicting masks on test data...')
-    print('-'*30)
     imgs_mask_test = model.predict(imgs_test, verbose=1)
-    np.save('imgs_mask_test.npy', imgs_mask_test)
+    np.save(data_path + 'imgs_mask_test.npy', imgs_mask_test)
 
 
 if __name__ == '__main__':
     train_and_predict()
+    print('Complete.')

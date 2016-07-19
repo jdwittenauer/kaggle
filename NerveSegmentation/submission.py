@@ -1,7 +1,12 @@
 from __future__ import print_function
+import sys
+sys.path.append('/home/john/git/kaggle/NerveSegmentation/')
+
 import numpy as np
 import cv2
 from data import image_cols, image_rows
+
+data_path = '/home/john/data/nerve-segmentation/'
 
 
 def prep(img):
@@ -29,7 +34,7 @@ def run_length_enc(label):
 def submission():
     from data import load_test_data
     imgs_test, imgs_id_test = load_test_data()
-    imgs_test = np.load('imgs_mask_test.npy')
+    imgs_test = np.load(data_path + 'imgs_mask_test.npy')
 
     argsort = np.argsort(imgs_id_test)
     imgs_id_test = imgs_id_test[argsort]
@@ -50,7 +55,7 @@ def submission():
             print('{}/{}'.format(i, total))
 
     first_row = 'img,pixels'
-    file_name = 'submission.csv'
+    file_name = data_path + 'submission.csv'
 
     with open(file_name, 'w+') as f:
         f.write(first_row + '\n')
@@ -61,3 +66,4 @@ def submission():
 
 if __name__ == '__main__':
     submission()
+    print('Complete.')
