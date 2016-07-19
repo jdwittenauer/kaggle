@@ -1,13 +1,4 @@
-# -*- coding: utf-8 -*-
-"""
-@author: John Wittenauer
-@notes: This script was tested on 64-bit Windows 7 using the Anaconda 2.2
-distribution of 64-bit Python 2.7.
-"""
-
 import os
-import sys
-import time
 import pickle
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -102,8 +93,8 @@ class FactorToNumeric(object):
         return self.transform(X)
 
 
-code_dir = '/home/john/git/kaggle/PropertyInspection/'
-data_dir = '/home/john/data/property/'
+code_dir = '/home/git/kaggle/PropertyInspection/'
+data_dir = '/home/data/property-inspection/'
 os.chdir(code_dir)
 logger = Logger(data_dir + 'output.txt')
 sys.stdout = logger

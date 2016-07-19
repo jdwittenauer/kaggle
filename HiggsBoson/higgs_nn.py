@@ -1,11 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-@author: John Wittenauer
-
-@notes: This script was tested on 64-bit Ubuntu 14 using the Anaconda 2.0
-distribution of 64-bit Python 2.7.
-"""
-
 import os, math
 import numpy as np
 import pandas as pd
@@ -243,16 +235,16 @@ def main():
     create_nn_files = True
     train_nn_model = True
     create_submission_file = False
-    code_dir = '/home/john/git/kaggle/HiggsBoson'
-    data_dir = '/home/john/data/higgs'
-    pretrain_file = '/combined.csv'
-    training_file = '/training.csv'
-    test_file = '/test.csv'
-    submit_file = '/submission.csv'
-    pretrain_nn_file = '/combined_nn.csv'
-    training_nn_file = '/training_nn.csv'
-    model_definition_file = '/mlp.yaml'
-    model_file = '/mlp.pkl'
+    code_dir = '/home/git/kaggle/HiggsBoson/'
+    data_dir = '/home/data/higgs-boson/'
+    pretrain_file = 'combined.csv'
+    training_file = 'training.csv'
+    test_file = 'test.csv'
+    submit_file = 'submission.csv'
+    pretrain_nn_file = 'combined_nn.csv'
+    training_nn_file = 'training_nn.csv'
+    model_definition_file = 'mlp.yaml'
+    model_file = 'mlp.pkl'
     
     os.chdir(code_dir)
     

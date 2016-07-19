@@ -1,16 +1,5 @@
-#  Author: Angela Chapman
-#  Date: 8/6/2014
-#  Modified By: John Wittenauer
-#
-#  This file contains code to accompany the Kaggle tutorial
-#  "Deep learning goes to the movies".  The code in this file
-#  is for Part 1 of the tutorial on Natural Language Processing.
-#
-# *************************************** #
-
-
 import sys
-sys.path.append('C:\\Users\\John\\PycharmProjects\\Kaggle\\Word2Vec')
+sys.path.append('/home/git/kaggle/BagOfPopcorn/')
 
 import pandas as pd
 from sklearn.feature_extraction.text import CountVectorizer
@@ -19,7 +8,7 @@ from old.Word2Vec.kaggle_utility import KaggleUtility
 
 
 def main():
-    data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\Word2Vec\\'
+    data_dir = '/home/data/bag-of-popcorn/'
 
     train = pd.read_csv(data_dir + 'labeledTrainData.tsv', header=0, delimiter='\t', quoting=3)
     test = pd.read_csv(data_dir + 'testData.tsv', header=0, delimiter='\t', quoting=3)

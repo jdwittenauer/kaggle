@@ -1,11 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-@author: John Wittenauer
-
-@notes: This script was tested on Linux using the Anaconda 2.2
-distribution of 32-bit Python 2.7.
-"""
-
 import os
 import time
 import pandas as pd
@@ -184,8 +176,8 @@ def make_submission(y_prob, ids, encoder, path, filename):
 
 
 def main():
-    code_dir = '/home/john/git/kaggle/OttoGroup/'
-    data_dir = '/home/john/data/otto/'
+    code_dir = '/home/git/kaggle/OttoGroup/'
+    data_dir = '/home/data/otto-group/'
     training_file = 'train.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'

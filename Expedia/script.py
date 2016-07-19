@@ -67,7 +67,7 @@ def generate_submission(data_dir, preds, test):
 
 
 print('Loading data sets...')
-data_dir = 'C:\\Users\\jdwittenauer\\Documents\\Data\\Expedia\\'
+data_dir = '/home/data/expedia/'
 
 destinations = pd.read_csv(data_dir + 'destinations.csv')
 

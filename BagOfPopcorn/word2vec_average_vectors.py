@@ -1,17 +1,5 @@
-#  Author: Angela Chapman
-#  Date: 8/6/2014
-#  Modified By: John Wittenauer
-#
-#  This file contains code to accompany the Kaggle tutorial
-#  "Deep learning goes to the movies".  The code in this file
-#  is for Parts 2 and 3 of the tutorial, which cover how to
-#  train a model using Word2Vec.
-#
-# *************************************** #
-
-
 import sys
-sys.path.append('C:\\Users\\John\\PycharmProjects\\Kaggle\\Word2Vec')
+sys.path.append('/home/git/kaggle/BagOfPopcorn/')
 
 import logging
 import nltk.data
@@ -79,7 +67,7 @@ def get_clean_reviews(reviews):
 
 
 def main():
-    data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\Word2Vec\\'
+    data_dir = '/home/data/bag-of-popcorn/'
 
     # Read data from files
     train = pd.read_csv(data_dir + 'labeledTrainData.tsv', header=0, delimiter='\t', quoting=3)
@@ -108,7 +96,7 @@ def main():
 
     # Set parameters and train the word2vec model
 
-    # Import the built-in logging module and configure it so that Word2Vec
+    # Import the built-in logging module and configure it so that BagOfPopcorn
     # creates nice output messages
     logging.basicConfig(format='%(asctime)s : %(levelname)s : %(message)s', level=logging.INFO)
 
@@ -120,7 +108,7 @@ def main():
     downsampling = 1e-3   # Downsample setting for frequent words
 
     # Initialize and train the model (this will take some time)
-    print 'Training Word2Vec model...'
+    print 'Training BagOfPopcorn model...'
     model = Word2Vec(sentences, workers=num_workers, size=num_features, min_count=min_word_count,
                      window=context, sample=downsampling, seed=1)
 
@@ -129,7 +117,7 @@ def main():
     model.init_sims(replace=True)
 
     # It can be helpful to create a meaningful model name and
-    # save the model for later use. You can load it later using Word2Vec.load()
+    # save the model for later use. You can load it later using BagOfPopcorn.load()
     model_name = '300features_40minwords_10context'
     model.save(data_dir + model_name)
 

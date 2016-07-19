@@ -1,11 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-@author: John Wittenauer
-
-@notes: This script was tested on 64-bit Windows 7 using the Anaconda 2.0
-distribution of 64-bit Python 2.7.
-"""
-
 import os
 import math
 import time
@@ -290,8 +282,8 @@ def main():
     save_model = False
     create_visualizations = True
     create_submission_file = False
-    code_dir = 'C:\\Users\\John\\Documents\\GitHub\\kaggle\\HiggsBoson\\'
-    data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\Higgs\\'
+    code_dir = '/home/git/kaggle/HiggsBoson/'
+    data_dir = '/home/data/higgs-boson/'
     training_file = 'training.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'

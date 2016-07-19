@@ -1,14 +1,7 @@
-# -*- coding: utf-8 -*-
-"""
-@author: John Wittenauer
-
-@notes: This script was tested on 64-bit Windows 7 using the Anaconda 2.0
-distribution of 64-bit Python 2.7.
-"""
-
 import os
 import time
 import pickle
+import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sb
@@ -418,8 +411,8 @@ def main():
     save_model = False
     create_submission_file = False
 
-    code_dir = 'C:\\Users\\John\\PycharmProjects\\Kaggle\\ForestCover\\'
-    data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\ForestCover\\'
+    code_dir = '/home/git/kaggle/ForestCover/'
+    data_dir = '/home/data/forest-cover/'
     training_file = 'train.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'

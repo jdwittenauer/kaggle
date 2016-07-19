@@ -1,18 +1,9 @@
-#  Author: Angela Chapman
-#  Date: 8/6/2014
-#  Modified By: John Wittenauer
-#
-# *************************************** #
-
-
 import re
 from bs4 import BeautifulSoup
 from nltk.corpus import stopwords
 
 
 class KaggleUtility(object):
-    """Utility class for processing raw HTML text into segments for further learning."""
-
     @staticmethod
     def review_to_wordlist(review, remove_stopwords=False):
         # Function to convert a document to a sequence of words,

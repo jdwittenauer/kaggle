@@ -1,11 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-@author: John Wittenauer
-
-@notes: This script was tested on 64-bit Ubuntu 14 using the Anaconda 2.0
-distribution of 64-bit Python 2.7.
-"""
-
 import os, math, time, pickle, sys
 import numpy as np
 import pandas as pd
@@ -18,7 +10,7 @@ from sklearn import naive_bayes
 from sklearn import preprocessing
 from sklearn import svm
 
-sys.path.append('/home/john/git/xgboost/wrapper')
+sys.path.append('/home/git/xgboost/wrapper')
 import xgboost as xgb
 
 
@@ -337,8 +329,8 @@ def main():
     save_model = False
     create_visualizations = True
     create_submission_file = False
-    code_dir = '/home/john/git/kaggle/HiggsBoson/'
-    data_dir = '/home/john/data/higgs/'
+    code_dir = '/home/git/kaggle/HiggsBoson/'
+    data_dir = '/home/data/higgs-boson/'
     training_file = 'training.csv'
     test_file = 'test.csv'
     submit_file = 'submission.csv'

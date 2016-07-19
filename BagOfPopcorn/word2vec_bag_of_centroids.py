@@ -1,18 +1,5 @@
-#  Author: Angela Chapman
-#  Date: 8/6/2014
-#  Modified By: John Wittenauer
-#
-#  This file contains code to accompany the Kaggle tutorial
-#  "Deep learning goes to the movies".  The code in this file
-#  is for Part 2 of the tutorial and covers Bag of Centroids
-#  for a Word2Vec model. This code assumes that you have already
-#  run Word2Vec and saved a model called "300features_40minwords_10context"
-#
-# *************************************** #
-
-
 import sys
-sys.path.append('C:\\Users\\John\\PycharmProjects\\Kaggle\\Word2Vec')
+sys.path.append('/home/git/kaggle/BagOfPopcorn/')
 
 import time
 import numpy as np
@@ -44,7 +31,7 @@ def create_bag_of_centroids(wordlist, word_centroid_map):
 
 
 def main():
-    data_dir = 'C:\\Users\\John\\Documents\\Kaggle\\Word2Vec\\'
+    data_dir = '/home/data/bag-of-popcorn/'
     model = Word2Vec.load(data_dir + '300features_40minwords_10context')
 
     # Run k-means on the word vectors and print a few clusters

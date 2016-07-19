@@ -1,4 +1,4 @@
-Google Word2Vec Tutorial
+Word2Vec Tutorial
 ======
 
 <a href="http://www.kaggle.com/c/word2vec-nlp-tutorial">View the competition details here.</a><br/>
