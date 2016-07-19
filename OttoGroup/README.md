@@ -1,5 +1,4 @@
-Otto Group Product Classification Challenge
-======
+# Otto Group Product Classification Challenge
 
 <img src="https://kaggle2.blob.core.windows.net/competitions/kaggle/4280/media/Grafik.jpg" alt="Otto" title="Otto">
 

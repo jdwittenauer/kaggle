@@ -1,5 +1,4 @@
-Higgs Boson Machine Learning Challenge
-======
+# Higgs Boson Machine Learning Challenge
 
 <img src="https://kaggle2.blob.core.windows.net/competitions/kaggle/3887/media/ATLASEXP_image.png" alt="ATLAS" title="ATLAS" />
 

@@ -1,5 +1,4 @@
-Word2Vec Tutorial
-======
+# Bag Of Popcorn (Word2Vec Tutorial)
 
 <a href="http://www.kaggle.com/c/word2vec-nlp-tutorial">View the competition details here.</a><br/>
 

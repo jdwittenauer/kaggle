@@ -1,5 +1,4 @@
-Liberty Mutual Property Inspection Prediction Challenge
-======
+# Liberty Mutual Property Inspection Prediction Challenge
 
 <img src="https://kaggle2.blob.core.windows.net/competitions/kaggle/4471/media/houses.png" alt="Houses" title="Houses">
 

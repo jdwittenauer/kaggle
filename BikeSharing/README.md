@@ -1,5 +1,4 @@
-Bike Sharing Demand
-======
+# Bike Sharing Demand
 
 <a href="http://www.kaggle.com/c/bike-sharing-demand">View the competition details here.</a><br/>
 

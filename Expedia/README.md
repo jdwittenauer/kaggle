@@ -1,5 +1,4 @@
-Expedia Hotel Recommendations
-======
+# Expedia Hotel Recommendations
 
 <a href="https://www.kaggle.com/c/expedia-hotel-recommendations">View the competition details here.</a><br/>
 

@@ -1,5 +1,4 @@
-Forest Cover Type Prediction
-======
+# Forest Cover Type Prediction
 
 <a href="http://www.kaggle.com/c/forest-cover-type-prediction">View the competition details here.</a><br/>
 
