@@ -7,7 +7,7 @@ from ionyx.ensemble import *
 from ionyx.experiment import *
 from ionyx.visualization import *
 
-from common import *
+from scripts.common import *
 
 
 data_dir = 'C:\\Users\\jdwittenauer\\Documents\\Data\\Property Inspection\\'

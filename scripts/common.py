@@ -8,14 +8,11 @@ from sklearn.manifold import *
 from sklearn.naive_bayes import *
 from sklearn.preprocessing import *
 from sklearn.svm import *
-
 from xgboost import *
-from keras.callbacks import *
 from keras.layers.core import *
 from keras.layers.normalization import *
 from keras.layers.advanced_activations import *
-from keras.models import *
-from keras.optimizers import *
+from keras.wrappers.scikit_learn import *
 
 
 def define_transforms():
@@ -85,21 +82,25 @@ def define_keras_model(input_size, layer_size, output_size, n_hidden_layers, ini
     return model
 
 
-def get_keras_definition():
+def build_keras_model(optimizer, loss, metrics):
     """
-    Defines and returns a Keras neural network model with the specified definition.
+    Builds and returns a Keras neural network model with the specified definition.
     """
-    return define_keras_model(input_size=128,
-                              layer_size=128,
-                              output_size=1,
-                              n_hidden_layers=2,
-                              init_method='glorot_uniform',
-                              input_activation='prelu',
-                              hidden_activation='prelu',
-                              output_activation='linear',
-                              use_batch_normalization=True,
-                              input_dropout=0.5,
-                              hidden_dropout=0.5)
+    model = define_keras_model(input_size=128,
+                               layer_size=128,
+                               output_size=1,
+                               n_hidden_layers=2,
+                               init_method='glorot_uniform',
+                               input_activation='prelu',
+                               hidden_activation='prelu',
+                               output_activation='linear',
+                               use_batch_normalization=True,
+                               input_dropout=0.5,
+                               hidden_dropout=0.5)
+
+    model.compile(optimizer=optimizer, loss=loss, metrics=metrics)
+
+    return model
 
 
 def define_model(task, algorithm):
@@ -128,11 +129,11 @@ def define_model(task, algorithm):
         elif algorithm == 'xgb':
             model = XGBClassifier(max_depth=3, learning_rate=0.1, n_estimators=100, silent=True,
                                   objective='multi:softmax', gamma=0, min_child_weight=1, max_delta_step=0,
-                                  subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
+                                  subsample=1.0, colsample_bytree=1.0, colsample_bylevel=1.0, reg_alpha=0,
+                                  reg_lambda=1, scale_pos_weight=1, base_score=0.5, seed=0, missing=None)
         elif algorithm == 'nn':
-            model = KerasClassifier(model=get_keras_definition(), optimizer='adam', loss='categorical_crossentropy',
-                                    train_batch_size=128, test_batch_size=128, nb_epoch=100, shuffle=True,
-                                    show_accuracy=False, validation_split=0, validation_data=None, callbacks=None)
+            model = KerasClassifier(build_fn=build_keras_model, optimizer='adam', loss='categorical_crossentropy',
+                                    metrics=['accuracy'], batch_size=128, epochs=100, verbose=1)
         else:
             raise Exception('No model defined for ' + algorithm)
     else:
@@ -153,13 +154,13 @@ def define_model(task, algorithm):
                                               min_samples_split=2, min_samples_leaf=1, max_depth=3, max_features=None,
                                               max_leaf_nodes=None)
         elif algorithm == 'xgb':
-            model = XGBRegressor(max_depth=3, learning_rate=0.01, n_estimators=1000, silent=True,
+            model = XGBRegressor(max_depth=3, learning_rate=0.01, n_estimators=100, silent=True,
                                  objective='reg:linear', gamma=0, min_child_weight=1, max_delta_step=0,
-                                 subsample=1.0, colsample_bytree=1.0, base_score=0.5, seed=0, missing=None)
+                                 subsample=1.0, colsample_bytree=1.0, colsample_bylevel=1.0, reg_alpha=0,
+                                 reg_lambda=1, scale_pos_weight=1, base_score=0.5, seed=0, missing=None)
         elif algorithm == 'nn':
-            model = KerasRegressor(model=get_keras_definition(), optimizer='adam', loss='mean_squared_error',
-                                   train_batch_size=128, test_batch_size=128, nb_epoch=100, shuffle=True,
-                                   show_accuracy=False, validation_split=0, validation_data=None, callbacks=None)
+            model = KerasRegressor(build_fn=build_keras_model, optimizer='adam', loss='mean_squared_error',
+                                   metrics=['accuracy'], batch_size=128, epochs=100, verbose=1)
         else:
             raise Exception('No model defined for ' + algorithm)
 
@@ -192,7 +193,8 @@ def get_param_grid(algorithm):
     elif algorithm == 'xgb':
         param_grid = [{'max_depth': [3, 5, 7, 9, None], 'learning_rate': [0.003, 0.01, 0.03, 0.1, 0.3, 1.0],
                        'n_estimators': [100, 300, 1000, 3000, 10000], 'min_child_weight': [1, 3, 5, 7, None],
-                       'subsample': [1.0, 0.9, 0.8, 0.7, 0.6, 0.5], 'colsample_bytree': [1.0, 0.9, 0.8, 0.7]}]
+                       'subsample': [1.0, 0.9, 0.8, 0.7, 0.6, 0.5], 'colsample_bytree': [1.0, 0.9, 0.8, 0.7],
+                       'colsample_bylevel': [1.0, 0.9, 0.8, 0.7]}]
     elif algorithm == 'nn':
         param_grid = [{'layer_size': [64, 128, 256, 384, 512, 1024], 'n_hidden_layers': [1, 2, 3, 4, 5, 6],
                        'init_method': ['glorot_normal', 'glorot_uniform', 'he_normal', 'he_uniform'],
