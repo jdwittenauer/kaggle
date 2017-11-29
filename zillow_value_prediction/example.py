@@ -7,8 +7,6 @@ from ionyx.ensemble import *
 from ionyx.experiment import *
 from ionyx.visualization import *
 
-from scripts.common import *
-
 
 data_dir = 'C:\\Users\\jdwittenauer\\Documents\\Data\\Property Inspection\\'
 logger = Logger(data_dir + 'output.txt')
